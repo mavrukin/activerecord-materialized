@@ -14,27 +14,38 @@ def female_pairing_total(view)
   view.where(gender: "f").pick(:role_pairings).to_i
 end
 
+def create_simulated_cast_row!(max_cast_id, offset, female_ids, movie_ids)
+  Job::CastInfo.create!(
+    id: max_cast_id + offset + 1,
+    person_id: female_ids[offset % female_ids.size],
+    movie_id: movie_ids[offset % movie_ids.size],
+    person_role_id: 1,
+    note: "update-simulation",
+    nr_order: offset % 20,
+    role_id: 2
+  )
+end
+
 def insert_synthetic_cast_rows!(count:)
-  connection = ActiveRecord::Base.connection
-  max_cast_id = connection.select_value("SELECT COALESCE(MAX(id), 0) FROM cast_info").to_i
-  female_ids = connection.select_values("SELECT id FROM name WHERE gender = 'f' LIMIT 100")
-  movie_ids = connection.select_values("SELECT id FROM title WHERE production_year > 2000 LIMIT 100")
+  max_cast_id = Job::CastInfo.maximum(:id).to_i
+  female_ids = Job::Name.where(gender: "f").limit(100).pluck(:id)
+  movie_ids = Job::Title.where("production_year > 2000").limit(100).pluck(:id)
 
   assert_condition!("Need seed names and titles for update simulation", female_ids.any? && movie_ids.any?)
 
-  connection.transaction do
-    count.times do |offset|
-      cast_id = max_cast_id + offset + 1
-      person_id = female_ids[offset % female_ids.size]
-      movie_id = movie_ids[offset % movie_ids.size]
-      connection.execute(
-        "INSERT INTO cast_info (id, person_id, movie_id, person_role_id, note, nr_order, role_id) " \
-        "VALUES (#{cast_id}, #{person_id}, #{movie_id}, 1, 'update-simulation', #{offset % 20}, 2)"
-      )
-    end
+  ActiveRecord::Base.transaction do
+    count.times { |offset| create_simulated_cast_row!(max_cast_id, offset, female_ids, movie_ids) }
   end
 
   count
+end
+
+def print_summary_row(label, time, count)
+  printf("%<label>-36s %<time>14s %<count>14s\n", label: label, time: time, count: count)
+end
+
+def print_summary_count_row(label, time, count)
+  printf("%<label>-36s %<time>14s %<count>14d\n", label: label, time: time, count: count)
 end
 
 def time_raw_gender_query
@@ -74,7 +85,8 @@ assert_condition!(
   "Reads before background refresh should stay fast (#{(stale_read_time * 1000).round(2)}ms)",
   stale_read_time < 0.05
 )
-puts "4) Read before refresh completes: #{(stale_read_time * 1000).round(2)}ms (still #{@stale_total}, stale snapshot OK)"
+stale_ms = (stale_read_time * 1000).round(2)
+puts "4) Read before refresh completes: #{stale_ms}ms (still #{@stale_total}, stale snapshot OK)"
 
 print "5) Running scheduled background refresh..."
 refresh_time = Benchmark.realtime { ActiveRecord::Materialized::AsyncRefresher.flush! }
@@ -93,12 +105,12 @@ assert_condition!("Post-refresh reads should stay fast", mv_read_after_avg < 0.0
 puts "6) Cached MV reads after refresh: #{(mv_read_after_avg * 1000).round(2)}ms avg"
 
 puts
-printf("%-36s %14s %14s\n", "Stage", "Time", "female pairings")
+print_summary_row("Stage", "Time", "female pairings")
 puts "-" * 66
-printf("%-36s %14s %14d\n", "Cached read (pre-update)", "#{(mv_read_before_avg * 1000).round(2)}ms", baseline)
-printf("%-36s %14s %14d\n", "Cached read (before refresh)", "#{(stale_read_time * 1000).round(2)}ms", @stale_total)
-printf("%-36s %14s %14d\n", "Background refresh (on write)", "#{(refresh_time * 1000).round(0)}ms", refreshed_total)
-printf("%-36s %14s %14d\n", "Cached read (post-refresh)", "#{(mv_read_after_avg * 1000).round(2)}ms", refreshed_total)
-printf("%-36s %14s %14d\n", "Raw query (reference)", "#{raw_after_avg.round(3)}s", raw_female_total)
+print_summary_count_row("Cached read (pre-update)", "#{(mv_read_before_avg * 1000).round(2)}ms", baseline)
+print_summary_count_row("Cached read (before refresh)", "#{(stale_read_time * 1000).round(2)}ms", @stale_total)
+print_summary_count_row("Background refresh (on write)", "#{(refresh_time * 1000).round(0)}ms", refreshed_total)
+print_summary_count_row("Cached read (post-refresh)", "#{(mv_read_after_avg * 1000).round(2)}ms", refreshed_total)
+print_summary_count_row("Raw query (reference)", "#{raw_after_avg.round(3)}s", raw_female_total)
 puts
 puts "Verification passed: writes trigger refresh; user reads stay fast."

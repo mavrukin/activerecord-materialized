@@ -14,9 +14,9 @@ RSpec.describe ActiveRecord::Materialized::View do
 
   before do
     ActiveRecord::Materialized::DependencyRegistry.reset!
-    ActiveRecord::Materialized::ChangeSubscriber.install!
-    ActiveRecord::Base.connection.execute("DELETE FROM items")
-    ActiveRecord::Base.connection.execute("INSERT INTO items (category, amount) VALUES ('books', 1), ('games', 2)")
+    Item.delete_all
+    Item.create!(category: "books", amount: 1)
+    Item.create!(category: "games", amount: 2)
     view_class.refresh!
   end
 

@@ -81,16 +81,13 @@ Metrics/ClassLength:
   Exclude:
     - "lib/activerecord/materialized/view.rb"
     - "lib/activerecord/materialized/metadata.rb"
-    - "lib/activerecord/materialized/change_key_extractor.rb"
 
 Metrics/AbcSize:
   Exclude:
     - "lib/activerecord/materialized/view.rb"
     - "lib/activerecord/materialized/refresher.rb"
     - "lib/activerecord/materialized/metadata.rb"
-    - "lib/activerecord/materialized/change_subscriber.rb"
     - "lib/activerecord/materialized/tasks.rb"
-    - "lib/activerecord/materialized/change_key_extractor.rb"
     - "lib/activerecord/materialized/incremental_maintainer.rb"
     - "lib/activerecord/materialized/view_definition.rb"
 
@@ -113,7 +110,7 @@ RSpec/SpecFilePathFormat:
   Exclude:
     - "spec/activerecord/materialized/view_spec.rb"
     - "spec/activerecord/materialized/incremental_maintainer_spec.rb"
-    - "spec/activerecord/materialized/change_key_extractor_spec.rb"
+    - "spec/activerecord/materialized/maintenance_delta_builder_spec.rb"
     - "spec/activerecord/materialized/view_definition_spec.rb"
     - "spec/activerecord/materialized/maintenance_delta_spec.rb"
     - "spec/activerecord/materialized/refresher_spec.rb"

@@ -59,7 +59,7 @@ module ActiveRecord
           Registry.register(self) unless abstract_class?
         end
 
-        sig { params(tables: T.any(Symbol, String)).void }
+        sig { params(tables: T.any(Symbol, String, T.class_of(::ActiveRecord::Base))).void }
         def depends_on(*tables)
           DependencyRegistry.register(self, tables)
         end
@@ -100,7 +100,10 @@ module ActiveRecord
 
         sig { returns(ViewDefinition) }
         def view_definition
-          ViewDefinition.new(resolved_source_sql)
+          ViewDefinition.new(
+            resolved_source,
+            explicit_group_keys: incremental_key_columns.presence
+          )
         end
 
         sig { returns(T::Array[String]) }
@@ -120,11 +123,18 @@ module ActiveRecord
           !@incremental_source_definition.nil?
         end
 
-        sig { params(sql: String).void }
-        def record_write_delta!(sql)
+        sig { params(change: WriteChange).void }
+        def record_write_change!(change)
           return unless incrementally_maintainable?
 
-          delta = ChangeKeyExtractor.new(sql, maintenance_key_columns).extract
+          delta = MaintenanceDeltaBuilder.new(change, maintenance_key_columns).build
+          record_write_delta!(delta)
+        end
+
+        sig { params(delta: MaintenanceDelta).void }
+        def record_write_delta!(delta)
+          return unless incrementally_maintainable?
+
           MaintenanceStore.new(self).merge!(delta)
         end
 
@@ -180,12 +190,18 @@ module ActiveRecord
           setting
         end
 
+        sig { returns(T.any(String, ::ActiveRecord::Relation)) }
+        def resolved_source
+          resolve_source_definition(
+            @source_definition,
+            "materialized_from is required for #{name || view_key}"
+          )
+        end
+
         sig { returns(String) }
         def resolved_source_sql
-          resolve_sql_definition(
-            @source_definition,
-            "materialized_from SQL is required for #{name || view_key}"
-          )
+          source = resolved_source
+          source.is_a?(::ActiveRecord::Relation) ? source.to_sql : source
         end
 
         sig { returns(Metadata) }
@@ -281,16 +297,32 @@ module ActiveRecord
 
         private
 
+        sig do
+          params(
+            definition: T.nilable(SourceDefinition),
+            empty_message: String
+          ).returns(T.any(String, ::ActiveRecord::Relation))
+        end
+        def resolve_source_definition(definition, empty_message)
+          source = coerce_source(definition)
+          raise ArgumentError, empty_message if source.nil?
+          raise ArgumentError, empty_message if source.is_a?(String) && source.strip.empty?
+
+          source
+        end
+
+        sig { params(definition: T.nilable(SourceDefinition)).returns(T.untyped) }
+        def coerce_source(definition)
+          source = definition
+          return source unless source.is_a?(Proc)
+
+          T.unsafe(source).lambda? ? source.call : T.unsafe(self).instance_eval(&source)
+        end
+
         sig { params(definition: T.nilable(SourceDefinition), empty_message: String).returns(String) }
         def resolve_sql_definition(definition, empty_message)
-          sql = definition
-          if sql.is_a?(Proc)
-            sql = T.unsafe(sql).lambda? ? sql.call : T.unsafe(self).instance_eval(&sql)
-          end
-          sql = sql.call if sql.respond_to?(:call) && !sql.is_a?(String)
-          raise ArgumentError, empty_message if sql.nil? || sql.strip.empty?
-
-          sql
+          source = resolve_source_definition(definition, empty_message)
+          source.is_a?(::ActiveRecord::Relation) ? source.to_sql : source
         end
 
         sig { void }
