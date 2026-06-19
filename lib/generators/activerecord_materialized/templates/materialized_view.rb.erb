@@ -1,0 +1,14 @@
+# frozen_string_literal: true
+
+class <%= class_name %> < ActiveRecord::Materialized::View
+  self.table_name = "mv_<%= table_name %>"
+
+  materialized_from <<~SQL
+    SELECT 1 AS id
+  SQL
+
+  depends_on :base_table
+  refresh_on_change :async
+  refresh_debounce 2.seconds
+  max_staleness 12.hours
+end

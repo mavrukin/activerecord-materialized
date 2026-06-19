@@ -1,0 +1,15 @@
+*.gem
+*.rbc
+/.config
+/coverage/
+/doc/
+/Gemfile.lock
+/pkg/
+/spec/reports/
+/spec/examples.txt
+/test/tmp/
+/test/version_tmp/
+/tmp/
+*.sqlite
+*.sqlite-*
+*.sqlite.scale

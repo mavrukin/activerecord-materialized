@@ -1,0 +1,29 @@
+# frozen_string_literal: true
+
+After installing activerecord-materialized, create materialized views as standard
+ActiveRecord models inheriting from ActiveRecord::Materialized::View.
+
+Example:
+
+  class SalesSummary < ActiveRecord::Materialized::View
+    self.table_name = "mv_sales_summary"
+
+    materialized_from <<~SQL
+      SELECT category, SUM(amount) AS total
+      FROM line_items
+      GROUP BY category
+    SQL
+
+    depends_on :line_items
+    max_staleness 12.hours
+  end
+
+Refresh views:
+
+  SalesSummary.refresh!
+  SalesSummary.refresh_if_stale!
+
+Or via Rake:
+
+  bin/rails materialized:refresh_all
+  bin/rails materialized:refresh_stale

@@ -1,0 +1,59 @@
+# frozen_string_literal: true
+
+require "spec_helper"
+
+RSpec.describe ActiveRecord::Materialized::View do
+  let(:view_class) do
+    Class.new(described_class) do
+      self.table_name = "mv_item_counts"
+      materialized_from "SELECT category, COUNT(*) AS item_count FROM items GROUP BY category"
+      depends_on :items
+      max_staleness 1.hour
+    end
+  end
+
+  before do
+    ActiveRecord::Materialized::DependencyRegistry.reset!
+    ActiveRecord::Materialized::ChangeSubscriber.install!
+    ActiveRecord::Base.connection.execute("DELETE FROM items")
+    ActiveRecord::Base.connection.execute("INSERT INTO items (category, amount) VALUES ('books', 1), ('games', 2)")
+    view_class.refresh!
+  end
+
+  it "exposes transparent ActiveRecord query interface" do
+    expect(view_class.where(category: "books").pick(:item_count)).to eq(1)
+    expect(view_class.count).to eq(2)
+  end
+
+  it "reports staleness based on max_staleness" do
+    travel_to Time.zone.local(2026, 1, 1, 12, 0, 0) do
+      view_class.refresh!
+      expect(view_class.stale?).to be(false)
+
+      travel 2.hours
+      expect(view_class.stale?).to be(true)
+    end
+  end
+
+  it "refreshes only when stale via refresh_if_stale!" do
+    refresh_count = 0
+    allow(view_class).to receive(:refresh!) { refresh_count += 1 }
+
+    view_class.refresh_if_stale!
+    expect(refresh_count).to eq(0)
+
+    travel 2.hours
+    view_class.refresh_if_stale!
+    expect(refresh_count).to eq(1)
+  end
+
+  it "supports callable source definitions" do
+    dynamic_view = Class.new(described_class) do
+      self.table_name = "mv_dynamic"
+      materialized_from -> { "SELECT COUNT(*) AS total FROM items" }
+    end
+
+    dynamic_view.refresh!
+    expect(dynamic_view.pick(:total)).to eq(2)
+  end
+end
