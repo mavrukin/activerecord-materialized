@@ -56,14 +56,19 @@ A naive approach refreshes the view on the first read after data changes. That p
 
 ```mermaid
 flowchart TB
-    subgraph writes ["Write path"]
+    subgraph writes ["Write path — routine maintenance"]
         W["INSERT / UPDATE / DELETE on depends_on table"]
         CS["ChangeSubscriber sql.active_record hook"]
         TR["TransactionRefreshRecorder after_commit callback"]
+        MS["ChangeKeyExtractor + MaintenanceStore"]
         RS[RefreshScheduler]
         AR["AsyncRefresher or ActiveJob"]
-        RF["Refresher.refresh CREATE TABLE AS + atomic swap"]
-        W --> CS --> TR --> RS --> AR --> RF
+        IM["IncrementalMaintainer in-place partition merge"]
+        W --> CS --> TR --> MS --> RS --> AR --> IM
+    end
+
+    subgraph bootstrap ["Bootstrap once"]
+        RF["Refresher CREATE TABLE AS + atomic swap"]
     end
 
     subgraph reads ["Read path — always fast"]
@@ -74,23 +79,27 @@ flowchart TB
 
     subgraph meta [Metadata]
         MD[("ar_materialized_view_metadata")]
+        IM --> CT
+        IM --> MD
+        MS --> MD
         RF --> CT
         RF --> MD
-        RS --> MD
     end
 
-    RF -.->|replaces snapshot| CT
+    IM -.->|"updates affected partitions"| CT
+    RF -.->|"initial snapshot"| CT
 ```
 
 ### Refresh lifecycle
 
 1. **Define** a view class with `materialized_from` SQL and `depends_on` tables.
-2. **Bootstrap** — first read (or explicit `refresh!`) builds the cache table if missing.
+2. **Bootstrap** — first read (or explicit `refresh!`) runs a one-time full `CREATE TABLE AS` + atomic swap when the cache table is missing.
 3. **Write** — any INSERT/UPDATE/DELETE on a dependency table is detected via ActiveRecord SQL instrumentation.
-4. **Defer** — changes inside a transaction are batched; refresh is scheduled on `after_commit`.
-5. **Debounce** — rapid writes coalesce into one refresh (configurable window).
-6. **Rebuild** — `Refresher` runs `CREATE TABLE ... AS <source query>`, then atomically swaps table names so reads never block on an empty table.
-7. **Read** — `where`, `find`, `count`, scopes all query the cache table directly (~sub-millisecond on typical hardware).
+4. **Accumulate** — `ChangeKeyExtractor` records affected `GROUP BY` partition keys in `MaintenanceStore` (widens to all partitions when scope is unknown).
+5. **Defer** — changes inside a transaction are batched; maintenance is scheduled on `after_commit`.
+6. **Debounce** — rapid writes coalesce into one maintenance pass (configurable window).
+7. **Maintain** — `IncrementalMaintainer` deletes and re-aggregates only affected partitions in the existing cache table (no DDL, no atomic swap on the hot path).
+8. **Read** — `where`, `find`, `count`, scopes query the cache table directly; reads before maintenance completes return the previous snapshot, reads after see updated partitions.
 
 ### Core components
 
@@ -101,10 +110,14 @@ flowchart TB
 | `DependencyRegistry` | Maps tables → view classes |
 | `TransactionRefreshRecorder` | Registers `after_commit` / `after_rollback` on the current transaction |
 | `RefreshScheduler` | Dispatches `:async`, `:immediate`, or `:manual` strategies |
-| `AsyncRefresher` | Debounced in-process background refresh (tests: `flush!`) |
+| `AsyncRefresher` | Debounced in-process background maintenance (tests: `flush!`) |
 | `RefreshJob` | Optional ActiveJob wrapper for production workers |
-| `Refresher` | Executes source SQL and performs atomic table swap |
-| `Metadata` | Tracks `dirty`, `last_refreshed_at`, `row_count`, errors |
+| `ViewDefinition` | Parses `materialized_from` to derive `GROUP BY` maintenance keys |
+| `ChangeKeyExtractor` | Maps write SQL to affected partition keys |
+| `MaintenanceStore` | Persists pending maintenance scope in metadata |
+| `IncrementalMaintainer` | Hot-path partition delete + re-aggregate in existing cache table |
+| `Refresher` | Bootstrap full materialization (`CREATE TABLE AS` + atomic swap); `refresh_mode :full` escape hatch |
+| `Metadata` | Tracks `dirty`, `maintenance_payload`, `last_refreshed_at`, `row_count`, errors |
 
 ---
 
