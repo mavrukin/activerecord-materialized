@@ -2,20 +2,19 @@
 
 require_relative "lib/activerecord/materialized/version"
 
-reject_sqlite = lambda do |file|
-  file.start_with?("benchmark/fixtures/job.sqlite") || file.end_with?(".sqlite")
-end
+# Ship only what a consumer needs at runtime: the library and the
+# top-level docs. Everything else (specs, benchmarks, Sorbet RBIs, dev
+# tooling, CI config) stays in the repository and out of the package.
+PACKAGED_DOCS = %w[README.md LICENSE CHANGELOG.md].freeze
 
-fallback_files = lambda do
-  Dir["{lib,spec,benchmark}/**/*", "LICENSE", "README.md", "CHANGELOG.md", "Rakefile", "Gemfile"]
-    .reject(&reject_sqlite)
+packaged_file = lambda do |path|
+  path.start_with?("lib/") || PACKAGED_DOCS.include?(path)
 end
 
 GEM_FILES = Dir.chdir(__dir__) do
-  next fallback_files.call unless File.directory?(".git")
-
-  files = `git ls-files -z 2>/dev/null`.split("\x0").reject(&reject_sqlite)
-  files.empty? ? fallback_files.call : files
+  tracked = `git ls-files -z 2>/dev/null`.split("\x0")
+  tracked = Dir["lib/**/*", *PACKAGED_DOCS] if tracked.empty?
+  tracked.select { |path| packaged_file.call(path) && File.file?(path) }.sort
 end
 
 Gem::Specification.new do |spec|
@@ -34,8 +33,11 @@ Gem::Specification.new do |spec|
   spec.license = "MIT"
   spec.required_ruby_version = ">= 3.4.0"
 
-  spec.metadata["homepage_uri"] = spec.homepage
-  spec.metadata["source_code_uri"] = "https://github.com/mavrukin/activerecord-materialized"
+  spec.metadata["allowed_push_host"] = "https://rubygems.org"
+  spec.metadata["source_code_uri"] = spec.homepage
+  spec.metadata["changelog_uri"] = "#{spec.homepage}/blob/main/CHANGELOG.md"
+  spec.metadata["bug_tracker_uri"] = "#{spec.homepage}/issues"
+  spec.metadata["documentation_uri"] = "#{spec.homepage}/blob/main/README.md"
   spec.metadata["rubygems_mfa_required"] = "true"
 
   spec.files = GEM_FILES
