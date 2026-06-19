@@ -22,6 +22,10 @@ Follow this end-to-end flow for any non-trivial unit of work:
 
 If the hooks cannot run (e.g. `lefthook` not installed — `Can't find lefthook in PATH`) or a check fails in a way you cannot resolve, **stop and ask the user for guidance** rather than committing/pushing anyway. First attempt to fix it properly (e.g. `bundle exec lefthook install`, or run the equivalent checks manually via `bin/ci`); only if that genuinely hits a wall do you ask how to proceed.
 
+### Never rewrite history
+
+**Always make new commits; never amend, rebase, squash, reset, or otherwise rewrite commit history.** No `git commit --amend`, no `git rebase` (interactive or otherwise), no `git reset` that discards commits, no force-pushing. If something needs fixing after a commit, add a follow-up commit.
+
 ## Quality bar
 
 Aim for code that reads as an **exemplar of idiomatic Ruby/Rails**:
