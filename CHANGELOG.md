@@ -1,16 +1,5 @@
 # Changelog
 
-## Unreleased
-
-### Fixed
-
-- Incremental maintenance now scopes deletes to the correct partition. Destroyed rows lost their `GROUP BY` key values (the change payload was read after the row was gone), which forced a full-partition rebuild on every delete.
-- `GROUP BY` key values that are `false` (or otherwise falsey) now map to the correct maintenance partition instead of widening to a full rebuild.
-
-### Changed
-
-- Internal quality pass: removed the no-op `InstallHooks` step, replaced string-`eval` callback installation with direct block registration, and reduced duplication across the cache-table, metadata, and view-definition code paths. No public API changes.
-
 ## 0.1.0 (2026-06-18)
 
 Initial release.
@@ -20,8 +9,8 @@ Initial release.
 - Application-level materialized views for ActiveRecord (Rails 8+, Ruby 3.4+)
 - Refresh-on-write: dependency changes schedule background refresh; reads never block on rebuild
 - Transparent ActiveRecord query interface (`where`, `find`, `count`, scopes)
-- Declarative `materialized_from` source SQL with callable support
-- `depends_on` dependency tracking via `sql.active_record` instrumentation
+- Declarative `materialized_from` sources defined as an `ActiveRecord::Relation` (via a block)
+- `depends_on` dependency tracking via ActiveRecord `after_*_commit` callbacks
 - Refresh strategies: `:async` (default), `:immediate`, `:manual`
 - Debounced async refresh with in-process `AsyncRefresher` or ActiveJob dispatcher
 - Atomic table-swap bootstrap (`CREATE TABLE AS` + rename) when cache table is first created
