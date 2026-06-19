@@ -7,7 +7,7 @@ require "pathname"
 BENCHMARK_ROOT = Pathname.new(__dir__).expand_path
 GEM_ROOT = BENCHMARK_ROOT.join("..").expand_path
 $LOAD_PATH.unshift GEM_ROOT.join("lib").to_s
-require "activerecord-materialized"
+require "activerecord/materialized"
 
 DB_PATH = ENV.fetch("JOB_DB", BENCHMARK_ROOT.join("fixtures", "job.sqlite").to_s)
 
@@ -25,8 +25,9 @@ class JobRecord < ActiveRecord::Base
   self.abstract_class = true
 end
 
-Dir[BENCHMARK_ROOT.join("models", "*.rb")].sort.each { |file| require file }
-Dir[BENCHMARK_ROOT.join("materialized_models", "*.rb")].sort.each { |file| require file }
+Dir[BENCHMARK_ROOT.join("models", "*.rb")].each { |file| require file }
+Dir[BENCHMARK_ROOT.join("materialized_models", "*.rb")].each { |file| require file }
+require_relative "support/table_formatter"
 
 QUERIES = [
   {
@@ -63,7 +64,7 @@ QUERIES = [
 
 ITERATIONS = Integer(ENV.fetch("BENCH_ITERATIONS", "5"))
 
-def timed(label)
+def timed(_label)
   times = []
   result = nil
   ITERATIONS.times do
@@ -103,16 +104,15 @@ results = QUERIES.map do |query|
 end
 
 puts
-printf("%-35s %12s %12s %10s %8s\n", "Query", "Raw (s)", "MV read (s)", "Refresh(ms)", "Speedup")
+BenchmarkSupport::TableFormatter.print_compare_header
 puts "-" * 72
 results.each do |row|
-  printf(
-    "%-35s %12.4f %12.4f %10d %8.1fx\n",
-    row[:name],
-    row[:raw_avg],
-    row[:mv_avg],
-    row[:refresh_ms],
-    row[:speedup]
+  BenchmarkSupport::TableFormatter.print_compare_row(
+    query: row[:name],
+    raw: row[:raw_avg],
+    mv_read: row[:mv_avg],
+    refresh: row[:refresh_ms],
+    speedup: row[:speedup]
   )
 end
 

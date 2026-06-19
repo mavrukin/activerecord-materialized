@@ -54,18 +54,26 @@ module ActiveRecord
 
         sig { params(event: ::ActiveSupport::Notifications::Event).void }
         def handle_sql_event(event)
-          payload = event.payload
-          return if payload[:cached]
-          return if payload[:name] == "SCHEMA"
-          return if refreshing_query?(T.cast(payload[:sql], T.nilable(String)))
+          return unless processable_write_event?(event)
 
-          sql = payload[:sql].to_s
-          return unless sql.match?(WRITE_SQL)
-
-          tables = extract_tables(sql)
+          tables = extract_tables(event.payload[:sql].to_s)
           return if tables.empty?
 
-          connection = resolve_connection(payload)
+          route_table_changes(resolve_connection(event.payload), tables)
+        end
+
+        sig { params(event: ::ActiveSupport::Notifications::Event).returns(T::Boolean) }
+        def processable_write_event?(event)
+          payload = event.payload
+          return false if payload[:cached]
+          return false if payload[:name] == "SCHEMA"
+          return false if refreshing_query?(T.cast(payload[:sql], T.nilable(String)))
+
+          payload[:sql].to_s.match?(WRITE_SQL)
+        end
+
+        sig { params(connection: Connection, tables: T::Array[String]).void }
+        def route_table_changes(connection, tables)
           if connection.transaction_open?
             DependencyRegistry.recorder_for(connection).add_tables(tables)
           else

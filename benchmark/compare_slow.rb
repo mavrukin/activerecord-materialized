@@ -3,6 +3,7 @@
 require_relative "support/benchmark_connection"
 require_relative "support/dataset_info"
 require_relative "support/sql_loader"
+require_relative "support/table_formatter"
 
 db_path = BenchmarkSupport.connect!
 stats = BenchmarkSupport::DatasetInfo.collect(db_path: db_path)
@@ -76,23 +77,20 @@ results = SLOW_QUERIES.map do |query|
 end
 
 puts
-printf("%-28s %12s %12s %10s %8s %6s\n", "Query", "Raw (s)", "MV read (s)", "Refresh(ms)", "Speedup", "Check")
+BenchmarkSupport::TableFormatter.print_slow_header
 puts "-" * 80
 results.each do |row|
-  printf(
-    "%-28s %12.4f %12.4f %10d %8.1fx %6s\n",
-    row[:name],
-    row[:raw_avg],
-    row[:mv_avg],
-    row[:refresh_ms],
-    row[:speedup],
-    row[:flag]
+  BenchmarkSupport::TableFormatter.print_slow_row(
+    query: row[:name],
+    raw: row[:raw_avg],
+    mv_read: row[:mv_avg],
+    refresh: row[:refresh_ms],
+    speedup: row[:speedup],
+    check: row[:flag]
   )
 end
 
 slow_count = results.count { |r| r[:raw_avg] >= 1.0 }
 puts
 puts "#{slow_count}/#{results.size} queries exceeded 1 second raw execution time."
-if slow_count < results.size
-  puts "If queries are still fast, regenerate with JOB_SCALE=stress and retry."
-end
+warn "If queries are still fast, regenerate with JOB_SCALE=stress and retry." if slow_count < results.size

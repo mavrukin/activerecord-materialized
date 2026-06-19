@@ -2,6 +2,7 @@
 
 require_relative "support/benchmark_connection"
 require_relative "support/dataset_info"
+require_relative "support/table_formatter"
 require "benchmark"
 
 class UpdateVerificationError < StandardError; end
@@ -14,26 +15,37 @@ def female_pairing_total(view)
   view.where(gender: "f").pick(:role_pairings).to_i
 end
 
-def insert_synthetic_cast_rows!(count:)
-  connection = ActiveRecord::Base.connection
-  max_cast_id = connection.select_value("SELECT COALESCE(MAX(id), 0) FROM cast_info").to_i
+def insert_cast_row(connection, cast_id, person_id, movie_id, offset)
+  connection.execute(
+    "INSERT INTO cast_info (id, person_id, movie_id, person_role_id, note, nr_order, role_id) " \
+    "VALUES (#{cast_id}, #{person_id}, #{movie_id}, 1, 'update-simulation', #{offset % 20}, 2)"
+  )
+end
+
+def cast_seed_ids(connection)
   female_ids = connection.select_values("SELECT id FROM name WHERE gender = 'f' LIMIT 100")
   movie_ids = connection.select_values("SELECT id FROM title WHERE production_year > 2000 LIMIT 100")
+  [female_ids, movie_ids]
+end
 
-  assert_condition!("Need seed names and titles for update simulation", female_ids.any? && movie_ids.any?)
-
+def insert_cast_rows_batch(connection, count, max_cast_id, female_ids, movie_ids)
   connection.transaction do
     count.times do |offset|
       cast_id = max_cast_id + offset + 1
       person_id = female_ids[offset % female_ids.size]
       movie_id = movie_ids[offset % movie_ids.size]
-      connection.execute(
-        "INSERT INTO cast_info (id, person_id, movie_id, person_role_id, note, nr_order, role_id) " \
-        "VALUES (#{cast_id}, #{person_id}, #{movie_id}, 1, 'update-simulation', #{offset % 20}, 2)"
-      )
+      insert_cast_row(connection, cast_id, person_id, movie_id, offset)
     end
   end
+end
 
+def insert_synthetic_cast_rows!(count:)
+  connection = ActiveRecord::Base.connection
+  max_cast_id = connection.select_value("SELECT COALESCE(MAX(id), 0) FROM cast_info").to_i
+  female_ids, movie_ids = cast_seed_ids(connection)
+
+  assert_condition!("Need seed names and titles for update simulation", female_ids.any? && movie_ids.any?)
+  insert_cast_rows_batch(connection, count, max_cast_id, female_ids, movie_ids)
   count
 end
 
@@ -69,12 +81,14 @@ puts "3) Inserted #{inserted} cast_info rows (refresh scheduled on commit)"
 
 assert_condition!("View should be marked dirty after write", view.dirty?)
 
-stale_read_time = Benchmark.realtime { @stale_total = female_pairing_total(view) }
+stale_total = nil
+stale_read_time = Benchmark.realtime { stale_total = female_pairing_total(view) }
 assert_condition!(
   "Reads before background refresh should stay fast (#{(stale_read_time * 1000).round(2)}ms)",
   stale_read_time < 0.05
 )
-puts "4) Read before refresh completes: #{(stale_read_time * 1000).round(2)}ms (still #{@stale_total}, stale snapshot OK)"
+stale_ms = (stale_read_time * 1000).round(2)
+puts "4) Read before refresh completes: #{stale_ms}ms (still #{stale_total}, stale snapshot OK)"
 
 print "5) Running scheduled background refresh..."
 refresh_time = Benchmark.realtime { ActiveRecord::Materialized::AsyncRefresher.flush! }
@@ -93,12 +107,32 @@ assert_condition!("Post-refresh reads should stay fast", mv_read_after_avg < 0.0
 puts "6) Cached MV reads after refresh: #{(mv_read_after_avg * 1000).round(2)}ms avg"
 
 puts
-printf("%-36s %14s %14s\n", "Stage", "Time", "female pairings")
+BenchmarkSupport::TableFormatter.print_verify_header
 puts "-" * 66
-printf("%-36s %14s %14d\n", "Cached read (pre-update)", "#{(mv_read_before_avg * 1000).round(2)}ms", baseline)
-printf("%-36s %14s %14d\n", "Cached read (before refresh)", "#{(stale_read_time * 1000).round(2)}ms", @stale_total)
-printf("%-36s %14s %14d\n", "Background refresh (on write)", "#{(refresh_time * 1000).round(0)}ms", refreshed_total)
-printf("%-36s %14s %14d\n", "Cached read (post-refresh)", "#{(mv_read_after_avg * 1000).round(2)}ms", refreshed_total)
-printf("%-36s %14s %14d\n", "Raw query (reference)", "#{raw_after_avg.round(3)}s", raw_female_total)
+BenchmarkSupport::TableFormatter.print_verify_row(
+  stage: "Cached read (pre-update)",
+  time: "#{(mv_read_before_avg * 1000).round(2)}ms",
+  pairings: baseline
+)
+BenchmarkSupport::TableFormatter.print_verify_row(
+  stage: "Cached read (before refresh)",
+  time: "#{(stale_read_time * 1000).round(2)}ms",
+  pairings: stale_total
+)
+BenchmarkSupport::TableFormatter.print_verify_row(
+  stage: "Background refresh (on write)",
+  time: "#{(refresh_time * 1000).round(0)}ms",
+  pairings: refreshed_total
+)
+BenchmarkSupport::TableFormatter.print_verify_row(
+  stage: "Cached read (post-refresh)",
+  time: "#{(mv_read_after_avg * 1000).round(2)}ms",
+  pairings: refreshed_total
+)
+BenchmarkSupport::TableFormatter.print_verify_row(
+  stage: "Raw query (reference)",
+  time: "#{raw_after_avg.round(3)}s",
+  pairings: raw_female_total
+)
 puts
 puts "Verification passed: writes trigger refresh; user reads stay fast."

@@ -7,7 +7,7 @@ RSpec.describe ActiveRecord::Materialized::Refresher do
     Class.new(ActiveRecord::Materialized::View) do
       self.table_name = "mv_sales_summary"
 
-      materialized_from <<~SQL
+      materialized_from <<~SQL.squish
         SELECT category, SUM(amount) AS total_amount, COUNT(*) AS row_count
         FROM items
         GROUP BY category
@@ -16,8 +16,11 @@ RSpec.describe ActiveRecord::Materialized::Refresher do
   end
 
   before do
-    ActiveRecord::Base.connection.execute("DELETE FROM items")
-    ActiveRecord::Base.connection.execute("INSERT INTO items (category, amount) VALUES ('books', 10), ('books', 5), ('games', 20)")
+    connection = ActiveRecord::Base.connection
+    connection.execute("DELETE FROM items")
+    connection.execute(
+      "INSERT INTO items (category, amount) VALUES ('books', 10), ('books', 5), ('games', 20)"
+    )
   end
 
   describe "#refresh!" do
@@ -26,9 +29,9 @@ RSpec.describe ActiveRecord::Materialized::Refresher do
 
       expect(result.row_count).to eq(2)
       expect(view_class.order(:category).pluck(:category, :total_amount)).to eq([
-        ["books", 15],
-        ["games", 20]
-      ])
+                                                                                  ["books", 15],
+                                                                                  ["games", 20]
+                                                                                ])
     end
 
     it "records metadata after refresh" do

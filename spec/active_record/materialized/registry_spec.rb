@@ -19,18 +19,16 @@ RSpec.describe ActiveRecord::Materialized::Registry do
 
   it "refreshes all registered views" do
     refreshed = []
+    stub_refresh = ->(view_class) { view_class.define_singleton_method(:refresh!) { |**_| refreshed << name } }
 
-    Class.new(ActiveRecord::Materialized::View) do
+    stub_refresh.call(Class.new(ActiveRecord::Materialized::View) do
       self.table_name = "mv_refresh_all_a"
       materialized_from "SELECT 1 AS value"
-      define_singleton_method(:refresh!) { |**_| refreshed << name; nil }
-    end
-
-    Class.new(ActiveRecord::Materialized::View) do
+    end)
+    stub_refresh.call(Class.new(ActiveRecord::Materialized::View) do
       self.table_name = "mv_refresh_all_b"
       materialized_from "SELECT 2 AS value"
-      define_singleton_method(:refresh!) { |**_| refreshed << name; nil }
-    end
+    end)
 
     described_class.refresh_all!
     expect(refreshed.size).to eq(2)

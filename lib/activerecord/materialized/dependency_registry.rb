@@ -36,26 +36,26 @@ module ActiveRecord
         sig { void }
         def reset!
           @dependency_index = Hash.new { |hash, key| hash[key] = [] }
-          @recorders = {}
+          @recorders = {}.compare_by_identity
         end
 
         sig { params(connection: Connection).returns(TransactionRefreshRecorder) }
         def recorder_for(connection)
-          recorders[connection.object_id] ||= TransactionRefreshRecorder.new.tap do |recorder|
+          recorders[connection] ||= TransactionRefreshRecorder.new.tap do |recorder|
             recorder.bind_connection!(connection)
           end
         end
 
         sig { params(connection: Connection).void }
         def clear_recorder(connection)
-          recorders.delete(connection.object_id)
+          recorders.delete(connection)
         end
 
         private
 
-        sig { returns(T::Hash[Integer, TransactionRefreshRecorder]) }
+        sig { returns(T::Hash[Connection, TransactionRefreshRecorder]) }
         def recorders
-          @recorders ||= T.let({}, T.nilable(T::Hash[Integer, TransactionRefreshRecorder]))
+          @recorders ||= T.let({}.compare_by_identity, T.nilable(T::Hash[Connection, TransactionRefreshRecorder]))
         end
 
         sig { returns(T::Hash[String, T::Array[ViewClass]]) }

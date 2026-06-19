@@ -2,12 +2,12 @@
 
 require "spec_helper"
 
-RSpec.describe "materialized view integration" do
+RSpec.describe ActiveRecord::Materialized::View, ".refresh!" do
   let(:view_class) do
     Class.new(ActiveRecord::Materialized::View) do
       self.table_name = "mv_revenue_by_category"
 
-      materialized_from <<~SQL
+      materialized_from <<~SQL.squish
         SELECT category,
                SUM(amount) AS revenue,
                AVG(amount) AS average_amount
@@ -21,8 +21,8 @@ RSpec.describe "materialized view integration" do
 
       after_refresh { @last_refresh_note = "completed" }
 
-      def self.last_refresh_note
-        @last_refresh_note
+      class << self
+        attr_reader :last_refresh_note
       end
     end
   end
@@ -37,10 +37,10 @@ RSpec.describe "materialized view integration" do
     result = view_class.refresh!
     expect(result.row_count).to eq(3)
     expect(view_class.order(:category).pluck(:category, :revenue)).to eq([
-      ["books", 30],
-      ["games", 7],
-      ["tools", 50]
-    ])
+                                                                           ["books", 30],
+                                                                           ["games", 7],
+                                                                           ["tools", 50]
+                                                                         ])
     expect(view_class.last_refresh_note).to eq("completed")
 
     # Simulate read-heavy access pattern

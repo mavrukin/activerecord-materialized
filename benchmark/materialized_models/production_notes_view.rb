@@ -3,7 +3,7 @@
 class ProductionNotesView < ActiveRecord::Materialized::View
   self.table_name = "mv_production_notes"
 
-  materialized_from <<~SQL
+  materialized_from <<~SQL.squish
     SELECT MIN(mc.note) AS production_note,
            MIN(t.title) AS movie_title,
            MIN(t.production_year) AS movie_year

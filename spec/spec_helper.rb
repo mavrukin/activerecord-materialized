@@ -10,7 +10,7 @@ $LOAD_PATH.unshift File.join(ROOT, "lib")
 
 require "active_support/time"
 
-require "activerecord-materialized"
+require "activerecord/materialized"
 
 RSpec.configure do |config|
   config.around do |example|

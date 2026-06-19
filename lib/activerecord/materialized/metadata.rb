@@ -1,6 +1,8 @@
 # typed: strict
 # frozen_string_literal: true
 
+require_relative "metadata/schema"
+
 module ActiveRecord
   module Materialized
     class Metadata
@@ -16,7 +18,7 @@ module ActiveRecord
 
       sig { returns(MetadataRecord) }
       def record
-        ensure_table!
+        Schema.ensure_table!(view_class)
         MetadataRecord.find_or_initialize_by(view_name: view_class.view_key)
       end
 
@@ -42,7 +44,7 @@ module ActiveRecord
 
       sig { returns(T::Boolean) }
       def dirty?
-        ensure_table!
+        Schema.ensure_table!(view_class)
         !!record.dirty?
       end
 
@@ -58,13 +60,13 @@ module ActiveRecord
 
       sig { void }
       def mark_dirty!
-        ensure_table!
+        Schema.ensure_table!(view_class)
         record.update!(dirty: true)
       end
 
       sig { void }
       def mark_refreshing!
-        ensure_table!
+        Schema.ensure_table!(view_class)
         record.update!(
           refreshing: true,
           last_error: nil
@@ -73,7 +75,7 @@ module ActiveRecord
 
       sig { params(row_count: Integer, duration_ms: Integer).void }
       def mark_refreshed!(row_count:, duration_ms:)
-        ensure_table!
+        Schema.ensure_table!(view_class)
         record.update!(
           last_refreshed_at: ::Time.zone.now,
           refreshing: false,
@@ -86,7 +88,7 @@ module ActiveRecord
 
       sig { params(error: StandardError).void }
       def mark_failed!(error)
-        ensure_table!
+        Schema.ensure_table!(view_class)
         record.update!(
           refreshing: false,
           last_error: error.message
@@ -102,42 +104,6 @@ module ActiveRecord
         else
           staleness.ago
         end
-      end
-
-      sig { void }
-      def ensure_table!
-        connection = view_class.connection
-
-        unless MetadataRecord.table_exists?
-          connection.create_table(::ActiveRecord::Materialized.metadata_table_name, force: :cascade) do |t|
-            t.string :view_name, null: false
-            t.datetime :last_refreshed_at
-            t.boolean :refreshing, null: false, default: false
-            t.boolean :dirty, null: false, default: true
-            t.integer :row_count
-            t.integer :refresh_duration_ms
-            t.text :last_error
-            t.timestamps
-          end
-          connection.add_index(::ActiveRecord::Materialized.metadata_table_name, :view_name, unique: true)
-        end
-
-        ensure_dirty_column!(connection)
-        MetadataRecord.reset_column_information
-      end
-
-      sig { params(connection: Connection).void }
-      def ensure_dirty_column!(connection)
-        return unless MetadataRecord.table_exists?
-        return if MetadataRecord.column_names.include?("dirty")
-
-        connection.add_column(
-          ::ActiveRecord::Materialized.metadata_table_name,
-          :dirty,
-          :boolean,
-          default: true,
-          null: false
-        )
       end
     end
   end

@@ -3,7 +3,7 @@
 class RussianVoiceActorsView < ActiveRecord::Materialized::View
   self.table_name = "mv_russian_voice_actors"
 
-  materialized_from <<~SQL
+  materialized_from <<~SQL.squish
     SELECT MIN(chn.name) AS uncredited_voiced_character,
            MIN(t.title) AS russian_movie
     FROM char_name AS chn,

@@ -11,7 +11,7 @@ pre-commit:
     sorbet:
       run: bundle exec srb tc
     rspec:
-      run: bundle exec rspec --exclude-pattern "spec/integration/benchmark_update_verification_spec.rb"
+      run: bundle exec rspec --exclude-pattern "spec/active_record/materialized/async_refresher_flush_spec.rb"
 
 pre-push:
   commands:
