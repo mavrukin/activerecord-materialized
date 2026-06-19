@@ -13,6 +13,7 @@ AllCops:
     - "vendor/**/*"
     - "tmp/**/*"
     - "benchmark/fixtures/**/*"
+    - "benchmark/**/*.rb"
 
 Sorbet/TrueSigil:
   Enabled: true

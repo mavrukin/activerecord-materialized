@@ -52,7 +52,7 @@ iterations = Integer(ENV.fetch("BENCH_ITERATIONS", "5"))
 results = SLOW_QUERIES.map do |query|
   raw_sql = BenchmarkSupport::SqlLoader.load(query[:raw_sql_file])
 
-  print "Refreshing #{query[:name]}..."
+  print "Bootstrap refresh (one-time) #{query[:name]}..."
   refresh_result = query[:materialized].refresh!
   puts " #{refresh_result.row_count} rows in #{refresh_result.duration_ms}ms"
 
@@ -76,7 +76,7 @@ results = SLOW_QUERIES.map do |query|
 end
 
 puts
-printf("%-28s %12s %12s %10s %8s %6s\n", "Query", "Raw (s)", "MV read (s)", "Refresh(ms)", "Speedup", "Check")
+printf("%-28s %12s %12s %10s %8s %6s\n", "Query", "Raw (s)", "MV read (s)", "Bootstrap(ms)", "Speedup", "Check")
 puts "-" * 80
 results.each do |row|
   printf(
@@ -93,6 +93,7 @@ end
 slow_count = results.count { |r| r[:raw_avg] >= 1.0 }
 puts
 puts "#{slow_count}/#{results.size} queries exceeded 1 second raw execution time."
+puts "For write → incremental maintenance → updated read timing, run: rake benchmark:verify_updates"
 if slow_count < results.size
   puts "If queries are still fast, regenerate with JOB_SCALE=stress and retry."
 end

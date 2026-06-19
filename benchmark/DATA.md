@@ -59,17 +59,25 @@ bundle exec rake benchmark:slow
 `benchmark:slow` refuses to run on databases smaller than xlarge (checks `cast_info` row count).
 If xlarge is still fast on your machine, use `JOB_SCALE=stress`.
 
-## Update simulation
+## Update simulation (incremental maintenance)
 
-Verify refresh-on-write: dependency writes schedule a background refresh while reads stay fast:
+Verify the full write → maintain → read workflow:
 
 ```bash
 bundle exec rake benchmark:verify_updates
 ```
 
-The script inserts rows into `cast_info`, confirms the view is marked dirty, reads still return the cached snapshot in sub-millisecond time, then runs `AsyncRefresher.flush!` to complete the scheduled refresh and validates results match the raw query.
+The script:
+
+1. **Bootstraps** the cache table once if missing (`CREATE TABLE AS` + atomic swap)
+2. **Inserts** rows into `cast_info`, accumulating maintenance scope from write SQL
+3. Confirms **stale reads** stay sub-millisecond and return the pre-update snapshot
+4. Runs `AsyncRefresher.flush!` to perform **incremental maintenance** (in-place partition merge — no cache-table rebuild)
+5. Validates **updated reads** match the raw query and remain fast
 
 Adjust insert volume with `UPDATE_INSERT_COUNT=8000`.
+
+Compare scripts (`rake benchmark`, `rake benchmark:slow`) measure **bootstrap** cost (one-time) vs raw query time. Use `benchmark:verify_updates` for routine maintenance after writes.
 
 ## Original JOB query sources
 

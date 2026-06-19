@@ -10,6 +10,9 @@ module BenchmarkSupport
   def self.connect!
     $LOAD_PATH.unshift GEM_ROOT.join("lib").to_s
     require "activerecord-materialized"
+    require "active_support/time"
+
+    Time.zone = "UTC"
 
     db_path = ENV.fetch("JOB_DB", BENCHMARK_ROOT.join("fixtures", "job.sqlite").to_s)
 

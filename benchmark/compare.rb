@@ -83,7 +83,7 @@ puts "=" * 72
 results = QUERIES.map do |query|
   raw_sql = File.read(BENCHMARK_ROOT.join("queries", query[:raw_sql_file]))
 
-  print "Refreshing materialized view for #{query[:name]}..."
+  print "Bootstrap refresh (one-time) for #{query[:name]}..."
   refresh_result = query[:materialized].refresh!
   puts " #{refresh_result.row_count} rows in #{refresh_result.duration_ms}ms"
 
@@ -103,7 +103,7 @@ results = QUERIES.map do |query|
 end
 
 puts
-printf("%-35s %12s %12s %10s %8s\n", "Query", "Raw (s)", "MV read (s)", "Refresh(ms)", "Speedup")
+printf("%-35s %12s %12s %10s %8s\n", "Query", "Raw (s)", "MV read (s)", "Bootstrap(ms)", "Speedup")
 puts "-" * 72
 results.each do |row|
   printf(
@@ -117,5 +117,6 @@ results.each do |row|
 end
 
 puts
-puts "Materialized views trade upfront refresh cost for dramatically faster reads."
-puts "With infrequent base-table updates, this matches native materialized view semantics."
+puts "Bootstrap refresh is a one-time full materialization cost per view."
+puts "For write → incremental maintenance → updated read timing, run: rake benchmark:verify_updates"
+puts "Materialized views trade bootstrap cost for dramatically faster reads."
