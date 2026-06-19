@@ -7,17 +7,15 @@ RSpec.describe ActiveRecord::Materialized::Refresher do
     Class.new(ActiveRecord::Materialized::View) do
       self.table_name = "mv_sales_summary"
 
-      materialized_from <<~SQL
-        SELECT category, SUM(amount) AS total_amount, COUNT(*) AS row_count
-        FROM items
-        GROUP BY category
-      SQL
+      materialized_from { ViewSources.sales_by_category }
     end
   end
 
   before do
-    ActiveRecord::Base.connection.execute("DELETE FROM items")
-    ActiveRecord::Base.connection.execute("INSERT INTO items (category, amount) VALUES ('books', 10), ('books', 5), ('games', 20)")
+    Item.delete_all
+    Item.create!(category: "books", amount: 10)
+    Item.create!(category: "books", amount: 5)
+    Item.create!(category: "games", amount: 20)
   end
 
   describe "#refresh!" do
@@ -26,9 +24,9 @@ RSpec.describe ActiveRecord::Materialized::Refresher do
 
       expect(result.row_count).to eq(2)
       expect(view_class.order(:category).pluck(:category, :total_amount)).to eq([
-        ["books", 15],
-        ["games", 20]
-      ])
+                                                                                  ["books", 15],
+                                                                                  ["games", 20]
+                                                                                ])
     end
 
     it "records metadata after refresh" do
@@ -51,11 +49,51 @@ RSpec.describe ActiveRecord::Materialized::Refresher do
 
     it "updates results when source data changes" do
       described_class.new(view_class).refresh!
-      ActiveRecord::Base.connection.execute("INSERT INTO items (category, amount) VALUES ('books', 100)")
+      item = Item.create!(category: "books", amount: 100)
+      view_class.record_write_change!(ActiveRecord::Materialized::WriteChange.from_record(item, :create))
 
       described_class.new(view_class).refresh!
       books_total = view_class.find_by(category: "books").total_amount
       expect(books_total).to eq(115)
+    end
+
+    context "with default incremental maintenance" do
+      let(:view_class) do
+        Class.new(ActiveRecord::Materialized::View) do
+          self.table_name = "mv_default_incremental"
+
+          materialized_from { ViewSources.sales_by_category_with_totals }
+        end
+      end
+
+      before do
+        Item.delete_all
+        Item.create!(category: "books", amount: 10)
+        Item.create!(category: "games", amount: 20)
+      end
+
+      it "bootstraps with a full refresh when the cache table is missing" do
+        result = described_class.new(view_class).refresh!
+
+        expect(result.row_count).to eq(2)
+        expect(view_class.order(:category).pluck(:category, :total_amount)).to eq(
+          [["books", 10], ["games", 20]]
+        )
+      end
+
+      it "maintains affected partitions in place on subsequent refreshes" do
+        described_class.new(view_class).refresh!
+        item = Item.create!(category: "books", amount: 5)
+        view_class.record_write_change!(ActiveRecord::Materialized::WriteChange.from_record(item, :create))
+
+        connection = ActiveRecord::Base.connection
+        allow(connection).to receive(:execute).and_call_original
+        described_class.new(view_class).refresh!
+
+        expect(connection).not_to have_received(:execute)
+        expect(view_class.find_by(category: "books").total_amount).to eq(15)
+        expect(view_class.find_by(category: "games").total_amount).to eq(20)
+      end
     end
   end
 end

@@ -17,6 +17,9 @@ module ActiveRecord
         @dependency_tables = T.let(nil, T.nilable(T::Array[String]))
         @refresh_strategy = T.let(nil, T.nilable(Symbol))
         @refresh_debounce = T.let(nil, T.nilable(DebounceInterval))
+        @refresh_mode = T.let(nil, T.nilable(RefreshMode))
+        @incremental_source_definition = T.let(nil, T.nilable(SourceDefinition))
+        @incremental_key_columns = T.let(nil, T.nilable(T::Array[String]))
         @table_name = T.let(nil, T.nilable(String))
 
         sig { returns(T.nilable(SourceDefinition)) }
@@ -37,6 +40,9 @@ module ActiveRecord
           T.unsafe(subclass).instance_variable_set(:@dependency_tables, [])
           T.unsafe(subclass).instance_variable_set(:@refresh_strategy, nil)
           T.unsafe(subclass).instance_variable_set(:@refresh_debounce, nil)
+          T.unsafe(subclass).instance_variable_set(:@refresh_mode, nil)
+          T.unsafe(subclass).instance_variable_set(:@incremental_source_definition, nil)
+          T.unsafe(subclass).instance_variable_set(:@incremental_key_columns, nil)
         end
 
         sig { returns(String) }
@@ -47,13 +53,13 @@ module ActiveRecord
           table.presence || "anonymous_view_#{object_id}"
         end
 
-        sig { params(sql: T.nilable(SourceDefinition), block: T.nilable(T.proc.returns(String))).void }
-        def materialized_from(sql = nil, &block)
-          @source_definition = T.let(sql || block, T.nilable(SourceDefinition))
+        sig { params(block: T.proc.returns(::ActiveRecord::Relation)).void }
+        def materialized_from(&block)
+          @source_definition = T.let(block, T.nilable(SourceDefinition))
           Registry.register(self) unless abstract_class?
         end
 
-        sig { params(tables: T.any(Symbol, String)).void }
+        sig { params(tables: T.any(Symbol, String, T.class_of(::ActiveRecord::Base))).void }
         def depends_on(*tables)
           DependencyRegistry.register(self, tables)
         end
@@ -66,6 +72,91 @@ module ActiveRecord
         sig { params(seconds: DebounceInterval).void }
         def refresh_debounce(seconds)
           @refresh_debounce = T.let(seconds, T.nilable(DebounceInterval))
+        end
+
+        sig { params(mode: RefreshMode).void }
+        def refresh_mode(mode)
+          T.unsafe(self).instance_variable_set(:@refresh_mode, mode.to_sym)
+        end
+
+        sig { params(block: T.proc.returns(::ActiveRecord::Relation)).void }
+        def incremental_from(&block)
+          @incremental_source_definition = T.let(block, T.nilable(SourceDefinition))
+        end
+
+        sig { params(columns: T.any(Symbol, String)).void }
+        def incremental_keys(*columns)
+          @incremental_key_columns = T.let(columns.map(&:to_s), T.nilable(T::Array[String]))
+        end
+
+        sig { returns(RefreshMode) }
+        def resolved_refresh_mode
+          mode = T.let(
+            T.unsafe(self).instance_variable_get(:@refresh_mode),
+            T.nilable(RefreshMode)
+          )
+          mode || :incremental
+        end
+
+        sig { returns(ViewDefinition) }
+        def view_definition
+          ViewDefinition.new(
+            resolved_source,
+            explicit_group_keys: incremental_key_columns.presence
+          )
+        end
+
+        sig { returns(T::Array[String]) }
+        def maintenance_key_columns
+          return incremental_key_columns if incremental_key_columns.any?
+
+          view_definition.group_key_columns
+        end
+
+        sig { returns(T::Boolean) }
+        def incrementally_maintainable?
+          resolved_refresh_mode != :full && view_definition.incrementally_maintainable?
+        end
+
+        sig { returns(T::Boolean) }
+        def incremental_source_override?
+          !@incremental_source_definition.nil?
+        end
+
+        sig { params(change: WriteChange).void }
+        def record_write_change!(change)
+          return unless incrementally_maintainable?
+
+          delta = MaintenanceDeltaBuilder.new(change, maintenance_key_columns).build
+          record_write_delta!(delta)
+        end
+
+        sig { params(delta: MaintenanceDelta).void }
+        def record_write_delta!(delta)
+          return unless incrementally_maintainable?
+
+          MaintenanceStore.new(self).merge!(delta)
+        end
+
+        sig { returns(T::Array[String]) }
+        def incremental_key_columns
+          columns = T.let(
+            T.unsafe(self).instance_variable_get(:@incremental_key_columns),
+            T.nilable(T::Array[String])
+          )
+          columns.nil? ? [] : columns
+        end
+
+        sig { returns(::ActiveRecord::Relation) }
+        def resolved_incremental_source
+          unless incremental_source_override?
+            raise ArgumentError, "incremental_from override is not configured for #{name || view_key}"
+          end
+
+          resolve_source_definition(
+            @incremental_source_definition,
+            "incremental_from is required for #{name || view_key}"
+          )
         end
 
         sig { returns(Symbol) }
@@ -99,19 +190,12 @@ module ActiveRecord
           setting
         end
 
-        sig { returns(String) }
-        def resolved_source_sql
-          sql = @source_definition
-          if sql.is_a?(Proc)
-            sql = T.unsafe(sql).lambda? ? sql.call : T.unsafe(self).instance_eval(&sql)
-          end
-          sql = sql.call if sql.respond_to?(:call) && !sql.is_a?(String)
-          if sql.nil? || sql.strip.empty?
-            raise ArgumentError,
-                  "materialized_from SQL is required for #{name || view_key}"
-          end
-
-          sql
+        sig { returns(::ActiveRecord::Relation) }
+        def resolved_source
+          resolve_source_definition(
+            @source_definition,
+            "materialized_from is required for #{name || view_key}"
+          )
         end
 
         sig { returns(Metadata) }
@@ -206,6 +290,30 @@ module ActiveRecord
         end
 
         private
+
+        sig do
+          params(
+            definition: T.nilable(SourceDefinition),
+            empty_message: String
+          ).returns(::ActiveRecord::Relation)
+        end
+        def resolve_source_definition(definition, empty_message)
+          source = coerce_source(definition)
+          raise ArgumentError, empty_message if source.nil?
+          unless source.is_a?(::ActiveRecord::Relation)
+            raise ArgumentError, "#{empty_message}: expected ActiveRecord::Relation, got #{source.class}"
+          end
+
+          source
+        end
+
+        sig { params(definition: T.nilable(SourceDefinition)).returns(T.untyped) }
+        def coerce_source(definition)
+          source = definition
+          return source unless source.is_a?(Proc)
+
+          source.call
+        end
 
         sig { void }
         def ensure_materialized!
