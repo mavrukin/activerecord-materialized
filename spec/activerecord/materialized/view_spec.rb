@@ -37,7 +37,10 @@ RSpec.describe ActiveRecord::Materialized::View do
 
   it "refreshes only when stale via refresh_if_stale!" do
     refresh_count = 0
-    allow(view_class).to receive(:refresh!) { refresh_count += 1 }
+    allow(view_class).to receive(:refresh!) do
+      refresh_count += 1
+      nil
+    end
 
     view_class.refresh_if_stale!
     expect(refresh_count).to eq(0)

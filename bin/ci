@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+echo "==> RuboCop"
+bundle exec rubocop lib/ bin/ --parallel
+
+echo "==> Sorbet"
+bundle exec srb tc
+
+echo "==> RSpec"
+bundle exec rspec
+
+echo "==> All checks passed"

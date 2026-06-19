@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Latest 3.4.x from ruby/setup-ruby (satisfies gemspec >= 3.4.0).
+  RUBY_VERSION: "3.4"
+
+jobs:
+  lint:
+    name: RuboCop
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ env.RUBY_VERSION }}
+          bundler-cache: true
+
+      - name: Run RuboCop
+        run: bundle exec rubocop lib/ bin/ --parallel
+
+  typecheck:
+    name: Sorbet
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ env.RUBY_VERSION }}
+          bundler-cache: true
+
+      - name: Typecheck with Sorbet
+        run: bundle exec srb tc
+
+  test:
+    name: RSpec
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ env.RUBY_VERSION }}
+          bundler-cache: true
+
+      - name: Run unit and integration specs
+        run: bundle exec rspec --exclude-pattern "spec/integration/benchmark_update_verification_spec.rb"
+
+  benchmark-integration:
+    name: Benchmark integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ env.RUBY_VERSION }}
+          bundler-cache: true
+
+      - name: Generate medium benchmark database
+        run: JOB_SCALE=medium bundle exec rake benchmark:setup
+
+      - name: Run benchmark integration spec
+        run: bundle exec rspec spec/integration/benchmark_update_verification_spec.rb
+
+  gem-build:
+    name: Gem build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ env.RUBY_VERSION }}
+          bundler-cache: true
+
+      - name: Build gem
+        run: gem build activerecord-materialized.gemspec

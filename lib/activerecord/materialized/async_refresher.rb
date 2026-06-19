@@ -1,74 +1,89 @@
+# typed: strict
 # frozen_string_literal: true
 
 module ActiveRecord
   module Materialized
-  class AsyncRefresher
-    class << self
-      def enqueue(view_class)
-        interval = view_class.resolved_refresh_debounce
+    class AsyncRefresher
+      class << self
+        extend T::Sig
 
-        mutex.synchronize do
-          pending[view_class.view_key] = view_class
-          schedule_unlocked(interval)
+        sig { params(view_class: ViewClass).void }
+        def enqueue(view_class)
+          interval = view_class.resolved_refresh_debounce
+
+          mutex.synchronize do
+            pending[view_class.view_key] = view_class
+            schedule_unlocked(interval)
+          end
         end
-      end
 
-      def flush!
-        mutex.synchronize do
-          cancel_timer_unlocked
-          drain_pending_unlocked
+        sig { void }
+        def flush!
+          mutex.synchronize do
+            cancel_timer_unlocked
+            drain_pending_unlocked
+          end
         end
-      end
 
-      def pending_count
-        mutex.synchronize { pending.size }
-      end
+        sig { returns(Integer) }
+        def pending_count
+          mutex.synchronize { pending.size }
+        end
 
-      def reset!
-        mutex.synchronize do
+        sig { void }
+        def reset!
+          mutex.synchronize do
+            cancel_timer_unlocked
+            pending.clear
+          end
+        end
+
+        private
+
+        sig { returns(T::Hash[String, ViewClass]) }
+        def pending
+          @pending ||= T.let({}, T.nilable(T::Hash[String, ViewClass]))
+        end
+
+        sig { returns(Mutex) }
+        def mutex
+          @mutex ||= T.let(Mutex.new, T.nilable(Mutex))
+        end
+
+        sig { params(interval: T.any(Integer, Float)).void }
+        def schedule_unlocked(interval)
           cancel_timer_unlocked
+
+          @timer_thread = T.let(
+            Thread.new do
+              sleep(interval) unless interval.zero?
+              mutex.synchronize { drain_pending_unlocked }
+            end,
+            T.nilable(Thread)
+          )
+        end
+
+        sig { void }
+        def cancel_timer_unlocked
+          return unless @timer_thread&.alive?
+
+          @timer_thread.kill
+          @timer_thread = nil
+        end
+
+        sig { void }
+        def drain_pending_unlocked
+          views = pending.values
           pending.clear
-        end
-      end
+          cancel_timer_unlocked
 
-      private
+          views.each do |view_class|
+            next unless view_class.dirty? || !view_class.table_exists?
 
-      def pending
-        @pending ||= {}
-      end
-
-      def mutex
-        @mutex ||= Mutex.new
-      end
-
-      def schedule_unlocked(interval)
-        cancel_timer_unlocked
-
-        @timer_thread = Thread.new do
-          sleep(interval) unless interval.zero?
-          mutex.synchronize { drain_pending_unlocked }
-        end
-      end
-
-      def cancel_timer_unlocked
-        return unless @timer_thread&.alive?
-
-        @timer_thread.kill
-        @timer_thread = nil
-      end
-
-      def drain_pending_unlocked
-        views = pending.values
-        pending.clear
-        cancel_timer_unlocked
-
-        views.each do |view_class|
-          next unless view_class.dirty? || !view_class.table_exists?
-
-          view_class.refresh!
+            view_class.refresh!
+          end
         end
       end
     end
-  end
   end
 end
