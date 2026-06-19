@@ -4,8 +4,8 @@
 
 > **Use case:** Your reporting page runs a 12-second join across six tables. Users visit once a day. MySQL has no native materialized views. This gem gives you PostgreSQL-style semantics in application code — writes trigger refresh, reads never pay for it.
 
-[![Ruby](https://img.shields.io/badge/ruby-%3E%3D%203.1-red)](activerecord-materialized.gemspec)
-[![Rails](https://img.shields.io/badge/rails-%3E%3D%207.0-red)](activerecord-materialized.gemspec)
+[![Ruby](https://img.shields.io/badge/ruby-%3E%3D%203.4-red)](activerecord-materialized.gemspec)
+[![Rails](https://img.shields.io/badge/rails-%3E%3D%208.0-red)](activerecord-materialized.gemspec)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 **Author:** [Michael Avrukin](https://github.com/mavrukin) · **License:** [MIT](LICENSE)

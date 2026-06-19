@@ -6,7 +6,7 @@ Initial release.
 
 ### Features
 
-- Application-level materialized views for ActiveRecord (Rails 7+, Ruby 3.1+)
+- Application-level materialized views for ActiveRecord (Rails 8+, Ruby 3.4+)
 - Refresh-on-write: dependency changes schedule background refresh; reads never block on rebuild
 - Transparent ActiveRecord query interface (`where`, `find`, `count`, scopes)
 - Declarative `materialized_from` source SQL with callable support
