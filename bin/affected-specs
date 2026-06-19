@@ -1,14 +1,10 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-require "set"
-
 FAST_SPEC_DIR = "spec/active_record/materialized"
 HEAVY_SPEC = File.join(FAST_SPEC_DIR, "async_refresher_flush_spec.rb")
-ALL_FAST_SPECS = Dir[File.join(FAST_SPEC_DIR, "*_spec.rb")]
-  .reject { |path| path == HEAVY_SPEC }
-  .sort
-  .freeze
+ALL_FAST_SPECS = Dir[File.join(FAST_SPEC_DIR, "*_spec.rb")].reject { |path| path == HEAVY_SPEC }.sort.freeze
+INFRA_TRIGGER = %r{\A(?:Gemfile|activerecord-materialized\.gemspec|\.rubocop|lefthook|sorbet|\.github/workflows)}
 
 # Non-obvious lib file → spec mappings. :all runs the full fast suite.
 SPEC_OVERRIDES = {
@@ -35,8 +31,7 @@ SPEC_OVERRIDES = {
   "railtie" => :all,
   "module_api" => :all,
   "type_reexports" => :all,
-  "tasks" => :all,
-  "version" => []
+  "tasks" => :all
 }.freeze
 
 module AffectedSpecs
@@ -46,47 +41,49 @@ module AffectedSpecs
     File.join(FAST_SPEC_DIR, name)
   end
 
-  def specs_for_lib_file(path)
-    return ALL_FAST_SPECS if path == "lib/activerecord/materialized.rb"
-    return ALL_FAST_SPECS if path == "lib/activerecord_materialized_types.rb"
-    return [fast_spec("metadata_spec.rb")] if path.start_with?("lib/activerecord/materialized/metadata/")
-    return [] unless path.start_with?("lib/")
+  def lib_entry_point?(path)
+    ["lib/activerecord/materialized.rb", "lib/activerecord_materialized_types.rb"].include?(path)
+  end
 
-    base = File.basename(path, ".rb")
-    override = SPEC_OVERRIDES[base]
-
-    case override
+  def specs_from_override(base)
+    case SPEC_OVERRIDES.fetch(base, :direct)
     when :all
       ALL_FAST_SPECS
     when Array
-      override.map { |name| fast_spec(name) }
-    when nil
+      SPEC_OVERRIDES.fetch(base).map { |name| fast_spec(name) }
+    when :direct
       direct = fast_spec("#{base}_spec.rb")
       File.exist?(direct) ? [direct] : ALL_FAST_SPECS
-    else
-      []
+    end
+  end
+
+  def specs_for_lib_file(path)
+    return ALL_FAST_SPECS if lib_entry_point?(path)
+    return [fast_spec("metadata_spec.rb")] if path.start_with?("lib/activerecord/materialized/metadata/")
+    return [] unless path.start_with?("lib/")
+
+    specs_from_override(File.basename(path, ".rb"))
+  end
+
+  def trigger_all_specs?(file)
+    file.match?(%r{\A(spec/spec_helper\.rb|spec/support/)}) || file.match?(INFRA_TRIGGER)
+  end
+
+  def accumulate_specs!(specs, file)
+    if file.end_with?("_spec.rb")
+      specs << file unless file == HEAVY_SPEC
+    elsif file.start_with?("lib/")
+      specs.concat(specs_for_lib_file(file))
     end
   end
 
   def specs_for_files(files)
-    specs = Set.new
-    trigger_all = false
+    specs = []
+    trigger_all = files.any? { |file| trigger_all_specs?(file) }
 
-    files.each do |file|
-      case file
-      when %r{\A(spec/spec_helper\.rb|spec/support/)}
-        trigger_all = true
-      when %r{_spec\.rb\z}
-        specs << file unless file == HEAVY_SPEC
-      when %r{\Alib/}
-        specs_for_lib_file(file).each { |spec| specs << spec }
-      when %r{\A(Gemfile|activerecord-materialized\.gemspec|\.rubocop|lefthook|sorbet)/},
-           %r{\A\.github/workflows/}
-        trigger_all = true
-      end
-    end
+    files.each { |file| accumulate_specs!(specs, file) } unless trigger_all
 
-    trigger_all ? ALL_FAST_SPECS : specs.to_a.sort
+    trigger_all ? ALL_FAST_SPECS : specs.uniq.sort
   end
 end
 
