@@ -56,24 +56,24 @@ A naive approach refreshes the view on the first read after data changes. That p
 
 ```mermaid
 flowchart TB
-    subgraph writes [Write path]
-        W[INSERT / UPDATE / DELETE<br/>on depends_on table]
-        CS[ChangeSubscriber<br/>sql.active_record hook]
-        TR[TransactionRefreshRecorder<br/>after_commit callback]
+    subgraph writes ["Write path"]
+        W["INSERT / UPDATE / DELETE on depends_on table"]
+        CS["ChangeSubscriber sql.active_record hook"]
+        TR["TransactionRefreshRecorder after_commit callback"]
         RS[RefreshScheduler]
-        AR[AsyncRefresher or ActiveJob]
-        RF[Refresher.refresh!<br/>CREATE TABLE AS + atomic swap]
+        AR["AsyncRefresher or ActiveJob"]
+        RF["Refresher.refresh CREATE TABLE AS + atomic swap"]
         W --> CS --> TR --> RS --> AR --> RF
     end
 
-    subgraph reads [Read path — always fast]
-        Q[SalesSummary.where(...)]
-        CT[(mv_sales_summary<br/>cache table)]
+    subgraph reads ["Read path — always fast"]
+        Q["SalesSummary queries"]
+        CT[("mv_sales_summary cache table")]
         Q --> CT
     end
 
     subgraph meta [Metadata]
-        MD[(ar_materialized_view_metadata<br/>dirty, last_refreshed_at, row_count)]
+        MD[("ar_materialized_view_metadata")]
         RF --> CT
         RF --> MD
         RS --> MD
