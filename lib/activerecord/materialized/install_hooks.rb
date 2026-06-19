@@ -12,7 +12,6 @@ module ActiveRecord
       def install!
         return if @installed
 
-        ChangeSubscriber.install!
         @installed = T.let(true, T.nilable(T::Boolean))
       end
     end

@@ -15,29 +15,39 @@ module ActiveRecord
       module ClassMethods
         extend T::Sig
 
+        sig { returns(T.class_of(View)) }
+        def view_class
+          T.cast(self, T.class_of(View))
+        end
+
         sig { returns(T::Boolean) }
         def stale?
-          view.metadata.stale?
+          view_class.metadata.stale?
         end
 
         sig { returns(T::Boolean) }
         def dirty?
-          view.metadata.dirty?
+          view_class.metadata.dirty?
         end
 
         sig { returns(T.nilable(Timestamp)) }
         def last_refreshed_at
-          view.metadata.last_refreshed_at
+          view_class.metadata.last_refreshed_at
         end
 
         sig { returns(T::Boolean) }
         def refreshing?
-          view.metadata.refreshing?
+          view_class.metadata.refreshing?
+        end
+
+        sig { void }
+        def mark_dependencies_changed!
+          view_class.metadata.mark_dirty!
         end
 
         sig { returns(T::Boolean) }
         def needs_refresh?
-          klass = view
+          klass = view_class
           return true unless klass.table_exists?
           return true if klass.metadata.last_refreshed_at.nil?
           return true if klass.metadata.dirty?
@@ -51,7 +61,7 @@ module ActiveRecord
         sig { params(force: T::Boolean).returns(RefreshResult) }
         def refresh!(force: false)
           Thread.current[:ar_materialized_refreshing] = true
-          Refresher.new(view).refresh!(force: force)
+          Refresher.new(view_class).refresh!(force: force)
         ensure
           Thread.current[:ar_materialized_refreshing] = false
         end
@@ -63,8 +73,7 @@ module ActiveRecord
 
         sig { returns(T::Boolean) }
         def table_exists?
-          klass = view
-          klass.connection.data_source_exists?(klass.table_name)
+          view_class.connection.data_source_exists?(view_class.table_name)
         end
 
         sig { params(args: T.untyped).returns(T.untyped) }
@@ -99,14 +108,9 @@ module ActiveRecord
 
         private
 
-        sig { returns(T.class_of(View)) }
-        def view
-          T.cast(self, T.class_of(View))
-        end
-
         sig { void }
         def ensure_materialized!
-          klass = view
+          klass = view_class
           return if klass.table_exists?
           return if Thread.current[:ar_materialized_refreshing]
 

@@ -28,6 +28,8 @@ module BenchmarkSupport
     module_function
 
     def collect(connection: ActiveRecord::Base.connection, db_path: default_db_path)
+      require_relative "job_models"
+      Job.register_models!
       cast_info_rows = count_rows(connection, "cast_info")
       title_rows = count_rows(connection, "title")
       movie_companies_rows = count_rows(connection, "movie_companies")
@@ -95,8 +97,9 @@ module BenchmarkSupport
       ENV.fetch("JOB_DB", BenchmarkSupport::BENCHMARK_ROOT.join("fixtures", "job.sqlite").to_s)
     end
 
-    def count_rows(connection, table)
-      connection.select_value("SELECT COUNT(*) FROM #{table}").to_i
+    def count_rows(_connection, table)
+      model = Job::MODELS.find { |candidate| candidate.table_name == table }
+      model ? model.count : 0
     end
   end
 end

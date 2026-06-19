@@ -14,6 +14,7 @@ module ActiveRecord
           connection = view_class.connection
           create_metadata_table!(connection) unless MetadataRecord.table_exists?
           ensure_dirty_column!(connection)
+          ensure_maintenance_payload_column!(connection)
           MetadataRecord.reset_column_information
         end
 
@@ -27,6 +28,7 @@ module ActiveRecord
             t.integer :row_count
             t.integer :refresh_duration_ms
             t.text :last_error
+            t.text :maintenance_payload
             t.timestamps
           end
           connection.add_index(::ActiveRecord::Materialized.metadata_table_name, :view_name, unique: true)
@@ -43,6 +45,18 @@ module ActiveRecord
             :boolean,
             default: true,
             null: false
+          )
+        end
+
+        sig { params(connection: Connection).void }
+        def ensure_maintenance_payload_column!(connection)
+          return unless MetadataRecord.table_exists?
+          return if MetadataRecord.column_names.include?("maintenance_payload")
+
+          connection.add_column(
+            ::ActiveRecord::Materialized.metadata_table_name,
+            :maintenance_payload,
+            :text
           )
         end
       end

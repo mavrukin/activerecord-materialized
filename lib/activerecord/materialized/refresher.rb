@@ -1,8 +1,6 @@
 # typed: strict
 # frozen_string_literal: true
 
-require_relative "refresher/strategies"
-
 module ActiveRecord
   module Materialized
     class Refresher
@@ -17,7 +15,6 @@ module ActiveRecord
       def initialize(view_class)
         @view_class = view_class
         @metadata = T.let(nil, T.nilable(Metadata))
-        @quoter = T.let(TableQuoter.new(view_class), TableQuoter)
       end
 
       sig { params(force: T::Boolean).returns(RefreshResult) }
@@ -25,22 +22,19 @@ module ActiveRecord
         raise RefreshError, "#{view_class.name} is already refreshing" if metadata.refreshing? && !force
 
         started_at = monotonic_clock
-        run_refresh_cycle(started_at)
+        run_refresh_cycle(started_at, force: force)
       rescue StandardError => e
         fail_refresh!(e)
       end
 
       private
 
-      sig { returns(TableQuoter) }
-      attr_reader :quoter
-
-      sig { params(started_at: Float).returns(RefreshResult) }
-      def run_refresh_cycle(started_at)
+      sig { params(started_at: Float, force: T::Boolean).returns(RefreshResult) }
+      def run_refresh_cycle(started_at, force:)
         metadata.mark_refreshing!
         view_class.run_refresh_callbacks(:before_refresh)
 
-        row_count = perform_refresh!
+        row_count = perform_refresh!(force: force)
         duration_ms = elapsed_milliseconds(started_at)
         result = complete_refresh!(row_count: row_count, duration_ms: duration_ms)
         view_class.run_refresh_callbacks(:after_refresh)
@@ -79,17 +73,25 @@ module ActiveRecord
         )
       end
 
-      sig { returns(Integer) }
-      def perform_refresh!
-        connection = view_class.connection
-        source_sql = view_class.resolved_source_sql
-        table_name = view_class.table_name
-
-        if ::ActiveRecord::Materialized.atomic_swap_refresh?
-          Strategies.atomic_swap!(quoter, connection, table_name, source_sql)
-        else
-          Strategies.truncate_insert!(quoter, connection, table_name, source_sql)
+      sig { params(force: T::Boolean).returns(Integer) }
+      def perform_refresh!(force: false)
+        relation = view_class.resolved_source
+        if force || view_class.resolved_refresh_mode == :full || !view_class.table_exists?
+          return full_refresh!(relation)
         end
+        return incremental_refresh! if view_class.incrementally_maintainable?
+
+        RelationCacheWriter.new(view_class).bootstrap!(relation)
+      end
+
+      sig { params(relation: ::ActiveRecord::Relation).returns(Integer) }
+      def full_refresh!(relation)
+        RelationCacheWriter.new(view_class).atomic_swap!(relation)
+      end
+
+      sig { returns(Integer) }
+      def incremental_refresh!
+        IncrementalMaintainer.new(view_class).maintain!(view_class.connection, view_class.table_name)
       end
     end
   end

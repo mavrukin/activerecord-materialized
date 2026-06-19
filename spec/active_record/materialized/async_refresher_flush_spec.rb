@@ -7,16 +7,22 @@ require "pathname"
 
 BENCHMARK_ROOT = Pathname.new(__dir__).join("..", "..", "..", "benchmark").expand_path
 
-module BenchmarkUpdateVerificationHelpers
+module AsyncRefresherFlushHelpers
   module_function
 
-  def insert_cast_row(connection)
-    max_id = connection.select_value("SELECT COALESCE(MAX(id), 0) FROM cast_info").to_i
-    person_id = connection.select_value("SELECT id FROM name WHERE gender = 'f' LIMIT 1")
-    movie_id = connection.select_value("SELECT id FROM title WHERE production_year > 2000 LIMIT 1")
-    connection.execute(
-      "INSERT INTO cast_info (id, person_id, movie_id, person_role_id, note, nr_order, role_id) " \
-      "VALUES (#{max_id + 1}, #{person_id}, #{movie_id}, 1, 'spec-update', 1, 2)"
+  def create_cast_row!
+    max_id = Job::CastInfo.maximum(:id).to_i
+    person_id = Job::Name.where(gender: "f").pick(:id)
+    movie_id = Job::Title.where(Job::Title.arel_table[:production_year].gt(2000)).pick(:id)
+
+    Job::CastInfo.create!(
+      id: max_id + 1,
+      person_id: person_id,
+      movie_id: movie_id,
+      person_role_id: 1,
+      note: "spec-update",
+      nr_order: 1,
+      role_id: 2
     )
   end
 end
@@ -29,6 +35,7 @@ RSpec.describe ActiveRecord::Materialized::AsyncRefresher, ".flush!", :benchmark
 
     ActiveRecord::Base.establish_connection(adapter: "sqlite3", database: db_path.to_s)
     load BENCHMARK_ROOT.join("support", "benchmark_connection.rb")
+    require BENCHMARK_ROOT.join("support", "source_relations.rb").to_s
     BenchmarkSupport.load_materialized_models!
 
     example.run
@@ -39,9 +46,15 @@ RSpec.describe ActiveRecord::Materialized::AsyncRefresher, ".flush!", :benchmark
 
   let(:view_class) { GenderPairingStatsView }
 
+  before do
+    described_class.reset!
+    view_class.metadata.clear_maintenance_payload!
+    ActiveRecord::Materialized::DependencyRegistry.register(view_class, view_class.dependency_tables)
+  end
+
   it "refreshes in the background after dependency writes so reads stay fast" do
     baseline = view_class.where(gender: "f").pick(:role_pairings).to_i
-    BenchmarkUpdateVerificationHelpers.insert_cast_row(ActiveRecord::Base.connection)
+    AsyncRefresherFlushHelpers.create_cast_row!
 
     expect(view_class.dirty?).to be(true)
     expect(view_class.where(gender: "f").pick(:role_pairings).to_i).to eq(baseline)

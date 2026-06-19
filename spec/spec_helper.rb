@@ -11,6 +11,10 @@ $LOAD_PATH.unshift File.join(ROOT, "lib")
 require "active_support/time"
 
 require "activerecord/materialized"
+require_relative "support/view_sources"
+
+class Item < ActiveRecord::Base
+end
 
 RSpec.configure do |config|
   config.around do |example|
@@ -36,9 +40,10 @@ RSpec.configure do |config|
       t.string :category, null: false
       t.integer :amount, null: false
     end
+    ActiveRecord::Materialized::TableModelRegistry.register(Item)
     ActiveRecord::Materialized::Registry.send(:reset!)
     ActiveRecord::Materialized::DependencyRegistry.reset!
-    ActiveRecord::Materialized::ChangeSubscriber.install!
+    ActiveRecord::Materialized::InstallHooks.install!
   end
 
   config.before(:each) do
@@ -49,7 +54,9 @@ RSpec.configure do |config|
         t.string :category, null: false
         t.integer :amount, null: false
       end
+      ActiveRecord::Materialized::TableModelRegistry.register(Item)
+      ActiveRecord::Materialized::Registry.send(:reset!)
+      ActiveRecord::Materialized::DependencyRegistry.reset!
     end
-    ActiveRecord::Materialized::Registry.send(:reset!)
   end
 end

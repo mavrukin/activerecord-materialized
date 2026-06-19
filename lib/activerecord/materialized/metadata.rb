@@ -2,6 +2,8 @@
 # frozen_string_literal: true
 
 require_relative "metadata/schema"
+require_relative "metadata/maintenance_payload"
+require_relative "metadata/timestamps"
 
 module ActiveRecord
   module Materialized
@@ -55,13 +57,31 @@ module ActiveRecord
         return false if max_staleness.nil?
 
         refreshed_at = T.must(last_refreshed_at)
-        refreshed_at.to_time < duration_threshold(max_staleness).to_time
+        refreshed_at.to_time < Timestamps.threshold(max_staleness).to_time
       end
 
       sig { void }
       def mark_dirty!
         Schema.ensure_table!(view_class)
         record.update!(dirty: true)
+      end
+
+      sig { params(payload: T::Hash[String, T.untyped]).void }
+      def record_maintenance_payload!(payload)
+        Schema.ensure_table!(view_class)
+        MaintenancePayload.record!(self, payload)
+      end
+
+      sig { returns(T.nilable(T::Hash[String, T.untyped])) }
+      def maintenance_payload
+        Schema.ensure_table!(view_class)
+        MaintenancePayload.fetch(self)
+      end
+
+      sig { void }
+      def clear_maintenance_payload!
+        Schema.ensure_table!(view_class)
+        MaintenancePayload.clear!(self)
       end
 
       sig { void }
@@ -77,12 +97,13 @@ module ActiveRecord
       def mark_refreshed!(row_count:, duration_ms:)
         Schema.ensure_table!(view_class)
         record.update!(
-          last_refreshed_at: current_timestamp,
+          last_refreshed_at: Timestamps.current,
           refreshing: false,
           dirty: false,
           row_count: row_count,
           refresh_duration_ms: duration_ms,
-          last_error: nil
+          last_error: nil,
+          maintenance_payload: nil
         )
       end
 
@@ -93,22 +114,6 @@ module ActiveRecord
           refreshing: false,
           last_error: error.message
         )
-      end
-
-      private
-
-      sig { returns(Timestamp) }
-      def current_timestamp
-        ::Time.zone&.now || ::Time.now.utc
-      end
-
-      sig { params(staleness: StalenessDuration).returns(Timestamp) }
-      def duration_threshold(staleness)
-        if staleness.is_a?(Integer)
-          ::ActiveSupport::Duration.seconds(staleness).ago
-        else
-          staleness.ago
-        end
       end
     end
   end

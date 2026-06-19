@@ -57,18 +57,18 @@ A naive approach refreshes the view on the first read after data changes. That p
 ```mermaid
 flowchart TB
     subgraph writes ["Write path — routine maintenance"]
-        W["INSERT / UPDATE / DELETE on depends_on table"]
-        CS["ChangeSubscriber sql.active_record hook"]
+        W["INSERT / UPDATE / DELETE on depends_on model"]
+        DT["DependencyTrackable after_*_commit callbacks"]
         TR["TransactionRefreshRecorder after_commit callback"]
-        MS["ChangeKeyExtractor + MaintenanceStore"]
+        MS["MaintenanceDeltaBuilder + MaintenanceStore"]
         RS[RefreshScheduler]
         AR["AsyncRefresher or ActiveJob"]
         IM["IncrementalMaintainer in-place partition merge"]
-        W --> CS --> TR --> MS --> RS --> AR --> IM
+        W --> DT --> TR --> MS --> RS --> AR --> IM
     end
 
     subgraph bootstrap ["Bootstrap once"]
-        RF["Refresher CREATE TABLE AS + atomic swap"]
+        RF["Refresher — RelationCacheWriter + atomic swap"]
     end
 
     subgraph reads ["Read path — always fast"]
@@ -92,10 +92,10 @@ flowchart TB
 
 ### Refresh lifecycle
 
-1. **Define** a view class with `materialized_from` SQL and `depends_on` tables.
-2. **Bootstrap** — first read (or explicit `refresh!`) runs a one-time full `CREATE TABLE AS` + atomic swap when the cache table is missing.
-3. **Write** — any INSERT/UPDATE/DELETE on a dependency table is detected via ActiveRecord SQL instrumentation.
-4. **Accumulate** — `ChangeKeyExtractor` records affected `GROUP BY` partition keys in `MaintenanceStore` (widens to all partitions when scope is unknown).
+1. **Define** a view class with a `materialized_from` block (returning an `ActiveRecord::Relation`) and `depends_on` models.
+2. **Bootstrap** — first read (or explicit `refresh!`) materializes the source relation into the cache table via `RelationCacheWriter` + atomic swap when the cache table is missing.
+3. **Write** — any create/update/destroy on a `depends_on` model is detected via ActiveRecord commit callbacks.
+4. **Accumulate** — `MaintenanceDeltaBuilder` records affected `GROUP BY` partition keys in `MaintenanceStore` (widens to all partitions when scope is unknown).
 5. **Defer** — changes inside a transaction are batched; maintenance is scheduled on `after_commit`.
 6. **Debounce** — rapid writes coalesce into one maintenance pass (configurable window).
 7. **Maintain** — `IncrementalMaintainer` deletes and re-aggregates only affected partitions in the existing cache table (no DDL, no atomic swap on the hot path).
@@ -106,17 +106,19 @@ flowchart TB
 | Component | Role |
 |-----------|------|
 | `ActiveRecord::Materialized::View` | Base model; DSL and query interface |
-| `ChangeSubscriber` | Listens to `sql.active_record`; detects writes on dependency tables |
+| `DependencyTrackable` | Installs `after_*_commit` callbacks on `depends_on` models |
 | `DependencyRegistry` | Maps tables → view classes |
 | `TransactionRefreshRecorder` | Registers `after_commit` / `after_rollback` on the current transaction |
 | `RefreshScheduler` | Dispatches `:async`, `:immediate`, or `:manual` strategies |
 | `AsyncRefresher` | Debounced in-process background maintenance (tests: `flush!`) |
 | `RefreshJob` | Optional ActiveJob wrapper for production workers |
-| `ViewDefinition` | Parses `materialized_from` to derive `GROUP BY` maintenance keys |
-| `ChangeKeyExtractor` | Maps write SQL to affected partition keys |
+| `ViewDefinition` | Inspects source relations for `GROUP BY` maintenance keys |
+| `MaintenanceDeltaBuilder` | Maps ActiveRecord change payloads to affected partition keys |
 | `MaintenanceStore` | Persists pending maintenance scope in metadata |
 | `IncrementalMaintainer` | Hot-path partition delete + re-aggregate in existing cache table |
-| `Refresher` | Bootstrap full materialization (`CREATE TABLE AS` + atomic swap); `refresh_mode :full` escape hatch |
+| `Refresher` | Orchestrates bootstrap/full refresh and incremental maintenance |
+| `RelationCacheWriter` | Materializes relation rows; atomic table swap on full refresh |
+| `QueryExpressions` | Portable Arel helpers (`sum_as`, `count_distinct_as`, …) for view definitions |
 | `Metadata` | Tracks `dirty`, `maintenance_payload`, `last_refreshed_at`, `row_count`, errors |
 
 ---
@@ -129,12 +131,12 @@ This gem applies decades of materialized view research to the application layer:
 |-------|-----------|
 | **Foundational survey** | Chirkova & Yang, [*Materialized Views*](https://www.cs.duke.edu/~chirkova/materialized_views.pdf) (2000) — definitions, refresh strategies, query rewriting |
 | **View maintenance** | Gupta & Mumick, [*Maintenance of Materialized Views*](https://www.cs.duke.edu/~chirkova/maint_materialized_views.pdf) — when full vs incremental refresh is appropriate |
-| **Incremental maintenance** | Niehues et al., [*Incremental View Maintenance for Fresh Databases*](https://db.in.tum.de/~schuele/data/ivm-sigmod2019.pdf) (SIGMOD 2019) — state-of-the-art IVM; future direction for this gem |
+| **Incremental maintenance** | Niehues et al., [*Incremental View Maintenance for Fresh Databases*](https://db.in.tum.de/~schuele/data/ivm-sigmod2019.pdf) (SIGMOD 2019) — statement-level delta processing; this gem applies partition-local maintenance at the application layer |
 | **Precomputation** | Larson & Zhou, *Efficient Maintenance of Materialized Outer-Join Views* — trade-offs in maintaining join-heavy views |
 | **Production reference** | [PostgreSQL: REFRESH MATERIALIZED VIEW](https://www.postgresql.org/docs/current/sql-refreshmaterializedview.html) — CONCURRENTLY refresh, separate read/refresh paths |
 | **Benchmark schema** | Leis et al., [*How Good Are Query Optimizers, Really?*](https://dl.acm.org/doi/10.1145/3035918.3064035) (VLDB 2015) — [Join Order Benchmark](https://github.com/gregrahn/join-order-benchmark) used in this repo's benchmark suite |
 
-**Design choice:** v0.1 uses **full refresh** (rebuild entire cache table) with **atomic swap**, matching PostgreSQL's non-concurrent refresh semantics. Incremental view maintenance (IVM) — updating only changed rows — is a planned future enhancement for views where full rebuild cost dominates.
+**Design choice:** After a one-time bootstrap, routine refresh uses **incremental view maintenance (IVM)** by default. Following Gupta & Mumick, aggregate views with `GROUP BY` are maintained by recomputing only **affected partitions** (group keys) and merging them into the existing cache table — no table rebuild, no atomic swap on the hot path. Writes on `depends_on` models accumulate partition keys from ActiveRecord change payloads; maintenance deletes stale partition rows and inserts freshly aggregated replacements. Use `refresh_mode :full` when a view cannot be maintained incrementally.
 
 ---
 
@@ -142,11 +144,13 @@ This gem applies decades of materialized view research to the application layer:
 
 - **Refresh on write** — dependency changes schedule background refresh; reads never block on rebuild
 - **Transparent ActiveRecord API** — `where`, `find`, `count`, scopes, associations on cache tables
-- **Declarative source SQL** — `materialized_from` with string or callable
-- **Atomic table swap** — `CREATE TABLE AS` + rename; minimal read downtime during refresh
+- **Relation-based sources** — `materialized_from` blocks return `ActiveRecord::Relation` (no raw SQL strings)
+- **Portable aggregations** — `QueryExpressions` helpers build Arel for `SUM`, `COUNT`, `AVG`, etc.
+- **Incremental maintenance by default** — partition-local re-aggregation for `GROUP BY` views; no cache-table rebuild on routine refresh
+- **Atomic table swap on bootstrap only** — initial full materialization + rename when the cache is first built or on `refresh_mode :full`
 - **Debounced async refresh** — coalesce rapid writes (PostgreSQL NOTIFY + worker pattern)
 - **ActiveJob integration** — offload refresh to Sidekiq, GoodJob, Solid Queue, etc.
-- **Dependency tracking** — `depends_on` tables; detects both AR and raw SQL writes
+- **Dependency tracking** — `depends_on` models; ActiveRecord commit callbacks detect writes
 - **Metadata table** — `last_refreshed_at`, `dirty`, `row_count`, `refresh_duration_ms`, errors
 - **Staleness safety net** — optional `max_staleness` + rake tasks for cron-driven refresh
 - **Rails generators** — `activerecord_materialized:install`, `activerecord_materialized:view`
@@ -160,9 +164,11 @@ This gem applies decades of materialized view research to the application layer:
 | Gotcha | Detail |
 |--------|--------|
 | **Eventual consistency** | Between a write and background refresh completing, reads return the previous snapshot. Same trade-off as `REFRESH MATERIALIZED VIEW CONCURRENTLY` in PostgreSQL. |
-| **`depends_on` is required** | The gem cannot infer dependencies from SQL. You must declare every base table that affects the view. Missing a table means stale reads with no refresh triggered. |
-| **Full refresh cost** | Each refresh re-runs the entire source query. For very large views, schedule refreshes off-peak or use `:manual` + cron. |
-| **Raw SQL table names** | `ChangeSubscriber` parses `INSERT INTO`, `UPDATE`, `DELETE FROM` statements. Unusual SQL (CTEs wrapping writes, multi-table deletes) may not be detected. |
+| **`depends_on` is required** | The gem cannot infer dependencies from a relation. Declare every model (or table) whose writes should trigger refresh. Prefer model classes (`depends_on LineItem`) so commit callbacks are wired automatically. |
+| **Maintenance scope** | Partition keys are taken from ActiveRecord change payloads when possible (`create`/`update`/`destroy` with equality on `GROUP BY` columns). Unbounded writes widen to all partitions (in-place, still no DDL). |
+| **Non-aggregate views** | Views without `GROUP BY` fall back to full refresh (`refresh_mode :full` or atomic swap). Join-heavy maintenance (Larson & Zhou) is not automatic yet. |
+| **Full refresh escape hatch** | `refresh_mode :full` or `refresh!(force: true)` rebuilds via atomic swap — use for recovery or non-maintainable views. |
+| **Table-name-only `depends_on`** | Symbol/string table names work, but refresh-on-write requires a resolvable ActiveRecord model for that table. Raw SQL writes bypass callbacks and will not trigger refresh. |
 | **SQLite vs MySQL in dev** | The benchmark uses SQLite. Production behavior is adapter-agnostic, but test atomic swap on your target database. |
 | **In-process async default** | Default `refresh_dispatcher: :async` uses a background thread. **Use ActiveJob in production** so refresh work runs on job workers, not Puma threads. |
 | **No automatic indexes** | Cache tables are created from query results. Add indexes on cache columns you filter/sort on. |
@@ -200,20 +206,26 @@ Define the view:
 
 ```ruby
 class SalesSummary < ActiveRecord::Materialized::View
+  extend ActiveRecord::Materialized::QueryExpressions
+
   self.table_name = "mv_sales_summary"
 
-  materialized_from <<~SQL
-    SELECT
-      products.category,
-      SUM(line_items.amount) AS revenue,
-      COUNT(DISTINCT orders.id) AS order_count
-    FROM line_items
-    INNER JOIN orders ON orders.id = line_items.order_id
-    INNER JOIN products ON products.id = line_items.product_id
-    GROUP BY products.category
-  SQL
+  materialized_from do
+    line_items = LineItem.arel_table
+    orders = Order.arel_table
+    products = Product.arel_table
 
-  depends_on :line_items, :orders, :products
+    LineItem
+      .joins(:order, :product)
+      .group(products[:category])
+      .select(
+        products[:category],
+        sum_as(line_items[:amount], as: :revenue),
+        count_distinct_as(orders[:id], as: :order_count)
+      )
+  end
+
+  depends_on LineItem, Order, Product
   refresh_on_change :async
   refresh_debounce 30.seconds
   max_staleness 12.hours
@@ -221,6 +233,8 @@ class SalesSummary < ActiveRecord::Materialized::View
   before_refresh { Rails.logger.info("Refreshing #{name}") }
 end
 ```
+
+Sources must be `ActiveRecord::Relation` objects built with standard query APIs and Arel — not raw SQL strings. Extract complex relations to a module or class method when a view definition grows large (see `spec/support/view_sources.rb` and `benchmark/support/source_relations.rb` in this repo).
 
 Query like any ActiveRecord model:
 
@@ -236,6 +250,24 @@ Refresh strategies:
 | `:async` (default) | After commit, debounced, via background thread or ActiveJob |
 | `:immediate` | Synchronous refresh on each write (blocks writers) |
 | `:manual` | Mark dirty only; call `refresh!` or rake tasks explicitly |
+
+### Incremental maintenance (default)
+
+For `GROUP BY` aggregate views, no extra configuration is required. The gem:
+
+1. Inspects the `materialized_from` relation to derive maintenance partition keys (`GROUP BY` columns).
+2. Accumulates affected partition keys from dependency writes (via ActiveRecord commit callbacks).
+3. On refresh, deletes and re-inserts only those partitions in the existing cache table.
+
+Optional overrides when you need explicit control:
+
+```ruby
+class SalesSummary < ActiveRecord::Materialized::View
+  incremental_keys :category # override inferred GROUP BY keys
+  refresh_mode :full         # opt out of incremental maintenance
+  # incremental_from { ... } # optional: override auto-scoped maintenance relation
+end
+```
 
 ---
 
@@ -262,23 +294,40 @@ end
 
 | Method | Description |
 |--------|-------------|
-| `refresh!` | Rebuild cache table from source SQL |
+| `refresh!` | Rebuild cache table from the `materialized_from` relation |
 | `refresh_if_stale!` | Refresh when dirty, missing, or time-stale |
 | `dirty?` | Whether a dependency change is pending refresh |
 | `stale?` | Whether view is dirty or exceeds `max_staleness` |
 | `last_refreshed_at` | Timestamp of last successful refresh |
 | `refreshing?` | Whether a refresh is in progress |
+| `resolved_source` | The current `ActiveRecord::Relation` used for refresh |
 
 ### DSL
 
 | Macro | Description |
 |-------|-------------|
-| `materialized_from(sql, &block)` | Source query used during refresh |
-| `depends_on(*tables)` | Register dependency tables; writes trigger refresh |
+| `materialized_from { relation }` | Block returning the source `ActiveRecord::Relation` |
+| `depends_on(*models_or_tables)` | Register dependencies; writes trigger refresh |
 | `refresh_on_change(strategy)` | `:async`, `:immediate`, or `:manual` |
 | `refresh_debounce(duration)` | Coalesce rapid writes before refreshing |
+| `refresh_mode(mode)` | `:incremental` (default) or `:full` |
+| `incremental_from { relation }` | Optional override for scoped maintenance relation |
+| `incremental_keys(*columns)` | Optional override for inferred `GROUP BY` keys |
 | `max_staleness(duration)` | Optional time-based safety refresh via rake/cron |
 | `before_refresh` / `after_refresh` | Refresh lifecycle callbacks |
+
+### QueryExpressions
+
+Include or extend `ActiveRecord::Materialized::QueryExpressions` when defining aggregations:
+
+| Helper | Arel equivalent |
+|--------|-----------------|
+| `sum_as(attr, as: :name)` | `SUM(...)` |
+| `avg_as(attr, as: :name)` | `AVG(...)` |
+| `count_as(attr, as: :name)` | `COUNT(...)` |
+| `count_distinct_as(attr, as: :name)` | `COUNT(DISTINCT ...)` |
+| `count_all_as(as: :name)` | `COUNT(*)` |
+| `min_as` / `max_as` | `MIN` / `MAX` |
 
 ### Rake tasks
 
@@ -293,8 +342,8 @@ bin/rails materialized:refresh_stale
 
 The included benchmark uses a [Join Order Benchmark](https://github.com/gregrahn/join-order-benchmark)-style schema on SQLite. On the **xlarge** dataset (~2M `cast_info` rows):
 
-| Query | Raw SQL | MV read | Speedup |
-|-------|---------|---------|---------|
+| Query | Source relation | MV read | Speedup |
+|-------|-----------------|---------|---------|
 | `gender_pairing_stats` | ~7.4s | ~0.3ms | ~21,000× |
 | `company_movie_cross` | ~7.4s | ~0.4ms | ~20,000× |
 | `person_movie_network` | ~13.3s | ~0.7ms | ~20,000× |
@@ -339,7 +388,7 @@ See [benchmark/DATA.md](benchmark/DATA.md) for dataset scales and setup details.
 | Transparent reads | ✅ (query rewrite or direct) | ✅ (ActiveRecord model) |
 | Refresh on dependency change | Manual / trigger / pg_cron | ✅ automatic via `depends_on` |
 | Background refresh | `REFRESH ... CONCURRENTLY` | ✅ async / ActiveJob |
-| Incremental refresh | Limited (IVM extensions) | ❌ full refresh only (v0.1) |
+| Incremental refresh | Limited (IVM extensions) | ✅ default partition-local IVM for `GROUP BY` views |
 | Atomic swap during refresh | ✅ CONCURRENTLY | ✅ table rename |
 | Database portability | PostgreSQL only | ✅ any ActiveRecord adapter |
 

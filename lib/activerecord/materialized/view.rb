@@ -19,6 +19,9 @@ module ActiveRecord
         @dependency_tables = T.let(nil, T.nilable(T::Array[String]))
         @refresh_strategy = T.let(nil, T.nilable(Symbol))
         @refresh_debounce = T.let(nil, T.nilable(DebounceInterval))
+        @refresh_mode = T.let(nil, T.nilable(RefreshMode))
+        @incremental_source_definition = T.let(nil, T.nilable(SourceDefinition))
+        @incremental_key_columns = T.let(nil, T.nilable(T::Array[String]))
         @table_name = T.let(nil, T.nilable(String))
 
         sig { returns(T.nilable(SourceDefinition)) }

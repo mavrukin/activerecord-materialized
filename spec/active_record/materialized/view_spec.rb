@@ -6,7 +6,7 @@ RSpec.describe ActiveRecord::Materialized::View do
   let(:view_class) do
     Class.new(described_class) do
       self.table_name = "mv_item_counts"
-      materialized_from "SELECT category, COUNT(*) AS item_count FROM items GROUP BY category"
+      materialized_from { ViewSources.item_count_by_category }
       depends_on :items
       max_staleness 1.hour
     end
@@ -14,9 +14,9 @@ RSpec.describe ActiveRecord::Materialized::View do
 
   before do
     ActiveRecord::Materialized::DependencyRegistry.reset!
-    ActiveRecord::Materialized::ChangeSubscriber.install!
-    ActiveRecord::Base.connection.execute("DELETE FROM items")
-    ActiveRecord::Base.connection.execute("INSERT INTO items (category, amount) VALUES ('books', 1), ('games', 2)")
+    Item.delete_all
+    Item.create!(category: "books", amount: 1)
+    Item.create!(category: "games", amount: 2)
     view_class.refresh!
   end
 
@@ -53,7 +53,7 @@ RSpec.describe ActiveRecord::Materialized::View do
   it "supports callable source definitions" do
     dynamic_view = Class.new(described_class) do
       self.table_name = "mv_dynamic"
-      materialized_from -> { "SELECT COUNT(*) AS total FROM items" }
+      materialized_from { ViewSources.total_item_count }
     end
 
     dynamic_view.refresh!
