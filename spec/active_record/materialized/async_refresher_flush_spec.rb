@@ -5,7 +5,7 @@ require "benchmark"
 require "spec_helper"
 require "pathname"
 
-BENCHMARK_ROOT = Pathname.new(__dir__).join("..", "..", "benchmark").expand_path
+BENCHMARK_ROOT = Pathname.new(__dir__).join("..", "..", "..", "benchmark").expand_path
 
 module BenchmarkUpdateVerificationHelpers
   module_function
