@@ -51,62 +51,34 @@ module ActiveRecord
 
       sig { params(force: T::Boolean).returns(Integer) }
       def perform_refresh!(force: false)
-        connection = view_class.connection
-        source_sql = view_class.resolved_source_sql
-        table_name = view_class.table_name
+        source = view_class.resolved_source
+        relation = source.is_a?(::ActiveRecord::Relation) ? source : nil
 
-        if force || view_class.resolved_refresh_mode == :full || !table_exists?(connection, table_name)
-          refresh_with_atomic_swap!(connection, table_name, source_sql)
+        if force || view_class.resolved_refresh_mode == :full || !view_class.table_exists?
+          refresh_full!(relation)
         elsif view_class.incrementally_maintainable?
-          IncrementalMaintainer.new(view_class).maintain!(connection, table_name)
+          IncrementalMaintainer.new(view_class).maintain!(view_class.connection, view_class.table_name)
         else
-          refresh_with_truncate_insert!(connection, table_name, source_sql)
+          refresh_truncate!(relation)
         end
       end
 
-      sig { params(connection: Connection, table_name: String, source_sql: String).returns(Integer) }
-      def refresh_with_atomic_swap!(connection, table_name, source_sql)
-        temp_table = "#{table_name}_refresh_#{SecureRandom.hex(4)}"
-        old_table = "#{table_name}_old_#{SecureRandom.hex(4)}"
-
-        connection.execute("CREATE TABLE #{quote_table(temp_table)} AS #{source_sql}")
-        row_count = connection.select_value("SELECT COUNT(*) FROM #{quote_table(temp_table)}").to_i
-
-        connection.transaction do
-          if table_exists?(connection, table_name)
-            connection.execute("ALTER TABLE #{quote_table(table_name)} RENAME TO #{quote_table(old_table)}")
-          end
-
-          connection.execute("ALTER TABLE #{quote_table(temp_table)} RENAME TO #{quote_table(table_name)}")
-          connection.execute("DROP TABLE IF EXISTS #{quote_table(old_table)}") if table_exists?(connection, old_table)
+      sig { params(relation: T.nilable(::ActiveRecord::Relation)).returns(Integer) }
+      def refresh_full!(relation)
+        if relation
+          RelationCacheWriter.new(view_class).atomic_swap!(relation)
+        else
+          SqlCacheWriter.new(view_class).atomic_swap!(view_class.resolved_source_sql)
         end
-
-        row_count
       end
 
-      sig { params(connection: Connection, table_name: String, source_sql: String).returns(Integer) }
-      def refresh_with_truncate_insert!(connection, table_name, source_sql)
-        ensure_cache_table!(connection, table_name, source_sql)
-        connection.execute("DELETE FROM #{quote_table(table_name)}")
-        connection.execute("INSERT INTO #{quote_table(table_name)} #{source_sql}")
-        connection.select_value("SELECT COUNT(*) FROM #{quote_table(table_name)}").to_i
-      end
-
-      sig { params(connection: Connection, table_name: String, source_sql: String).void }
-      def ensure_cache_table!(connection, table_name, source_sql)
-        return if table_exists?(connection, table_name)
-
-        connection.execute("CREATE TABLE #{quote_table(table_name)} AS #{source_sql} WHERE 1=0")
-      end
-
-      sig { params(connection: Connection, table_name: String).returns(T::Boolean) }
-      def table_exists?(connection, table_name)
-        connection.data_source_exists?(table_name)
-      end
-
-      sig { params(name: String).returns(String) }
-      def quote_table(name)
-        view_class.connection.quote_table_name(name)
+      sig { params(relation: T.nilable(::ActiveRecord::Relation)).returns(Integer) }
+      def refresh_truncate!(relation)
+        if relation
+          RelationCacheWriter.new(view_class).bootstrap!(relation)
+        else
+          SqlCacheWriter.new(view_class).replace_all!(view_class.resolved_source_sql)
+        end
       end
     end
   end

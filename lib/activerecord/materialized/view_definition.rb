@@ -30,11 +30,26 @@ module ActiveRecord
 
       sig { params(key_tuples: T::Array[T::Array[T.untyped]]).returns(String) }
       def scoped_source_sql(key_tuples)
-        raise ArgumentError, "scoped maintenance requires GROUP BY keys" unless incrementally_maintainable?
-        raise ArgumentError, "scoped maintenance requires at least one partition key" if key_tuples.empty?
+        partition_scope(key_tuples).to_sql
+      end
+
+      sig do
+        params(
+          model: T.class_of(::ActiveRecord::Base),
+          key_tuples: T::Array[T::Array[T.untyped]]
+        ).returns(::ActiveRecord::Relation)
+      end
+      def partition_scope_on(model, key_tuples)
+        validate_partition_keys!(key_tuples)
+        build_partition_scope(model.unscoped, key_tuples)
+      end
+
+      sig { params(key_tuples: T::Array[T::Array[T.untyped]]).returns(::ActiveRecord::Relation) }
+      def partition_scope(key_tuples)
+        validate_partition_keys!(key_tuples)
         raise ArgumentError, "scoped maintenance requires an ActiveRecord::Relation source" unless relation_source?
 
-        partition_scope(key_tuples).to_sql
+        build_partition_scope(relation, key_tuples)
       end
 
       sig { returns(String) }
@@ -79,18 +94,29 @@ module ActiveRecord
         end
       end
 
-      sig { params(key_tuples: T::Array[T::Array[T.untyped]]).returns(::ActiveRecord::Relation) }
-      def partition_scope(key_tuples)
+      sig { params(key_tuples: T::Array[T::Array[T.untyped]]).void }
+      def validate_partition_keys!(key_tuples)
+        raise ArgumentError, "scoped maintenance requires GROUP BY keys" unless incrementally_maintainable?
+        raise ArgumentError, "scoped maintenance requires at least one partition key" if key_tuples.empty?
+      end
+
+      sig do
+        params(
+          scope: ::ActiveRecord::Relation,
+          key_tuples: T::Array[T::Array[T.untyped]]
+        ).returns(::ActiveRecord::Relation)
+      end
+      def build_partition_scope(scope, key_tuples)
         columns = group_key_columns
         if columns.size == 1
           column = columns.fetch(0)
-          return relation.where(column => key_tuples.map(&:first))
+          return scope.where(column => key_tuples.map(&:first))
         end
 
-        key_tuples.reduce(T.unsafe(nil)) do |scope, tuple|
+        key_tuples.reduce(T.unsafe(nil)) do |merged_scope, tuple|
           attributes = columns.each_with_index.to_h { |column, index| [column, tuple[index]] }
-          branch = relation.where(attributes)
-          scope.nil? ? branch : scope.or(branch)
+          branch = scope.where(attributes)
+          merged_scope.nil? ? branch : merged_scope.or(branch)
         end
       end
     end

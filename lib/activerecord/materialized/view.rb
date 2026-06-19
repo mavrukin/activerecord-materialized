@@ -147,16 +147,22 @@ module ActiveRecord
           columns.nil? ? [] : columns
         end
 
-        sig { returns(String) }
-        def resolved_incremental_sql
+        sig { returns(T.any(String, ::ActiveRecord::Relation)) }
+        def resolved_incremental_source
           unless incremental_source_override?
             raise ArgumentError, "incremental_from override is not configured for #{name || view_key}"
           end
 
-          resolve_sql_definition(
+          resolve_source_definition(
             @incremental_source_definition,
             "incremental_from SQL is required for #{name || view_key}"
           )
+        end
+
+        sig { returns(String) }
+        def resolved_incremental_sql
+          source = resolved_incremental_source
+          source.is_a?(::ActiveRecord::Relation) ? source.to_sql : source
         end
 
         sig { returns(Symbol) }
