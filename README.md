@@ -419,11 +419,13 @@ See [benchmark/DATA.md](benchmark/DATA.md) for dataset scales and setup details.
 ```bash
 git clone https://github.com/mavrukin/activerecord-materialized.git
 cd activerecord-materialized
-bundle install
-bundle exec rspec
+bin/setup            # bundle install + git hooks + Sorbet RBIs
+bin/ci               # RuboCop, Sorbet, and the full test suite
 bundle exec rake benchmark:setup
 bundle exec rake benchmark
 ```
+
+Maintainers: see [RELEASING.md](RELEASING.md) for the gem publishing process.
 
 ---
 
