@@ -21,14 +21,16 @@ SCALES = {
   "small" => { titles: 2_000, names: 4_000, cast_info: 40_000, companies: 400, mc_per_title: 2, mi_per_title: 3 },
   "medium" => { titles: 8_000, names: 15_000, cast_info: 180_000, companies: 1_200, mc_per_title: 2, mi_per_title: 3 },
   "large" => { titles: 20_000, names: 40_000, cast_info: 500_000, companies: 3_000, mc_per_title: 3, mi_per_title: 4 },
-  "xlarge" => { titles: 50_000, names: 100_000, cast_info: 2_000_000, companies: 8_000, mc_per_title: 4, mi_per_title: 5 },
-  "stress" => { titles: 80_000, names: 160_000, cast_info: 8_000_000, companies: 12_000, mc_per_title: 8, mi_per_title: 6 }
+  "xlarge" => { titles: 50_000, names: 100_000, cast_info: 2_000_000, companies: 8_000, mc_per_title: 4,
+                mi_per_title: 5 },
+  "stress" => { titles: 80_000, names: 160_000, cast_info: 8_000_000, companies: 12_000, mc_per_title: 8,
+                mi_per_title: 6 }
 }.freeze
 
 config = SCALES.fetch(SCALE) { SCALES["medium"] }
 
 FileUtils.mkdir_p(File.dirname(DB_PATH))
-File.delete(DB_PATH) if File.exist?(DB_PATH)
+FileUtils.rm_f(DB_PATH)
 
 db = SQLite3::Database.new(DB_PATH)
 db.execute("PRAGMA journal_mode = WAL")
@@ -56,8 +58,8 @@ insert_rows(db, "kind_type", %w[id kind], [[1, "movie"], [2, "tv series"], [3, "
 insert_rows(db, "role_type", %w[id role], [[1, "actor"], [2, "actress"], [3, "director"], [4, "producer"]])
 insert_rows(db, "company_type", %w[id kind], [[1, "production companies"], [2, "distributors"]])
 insert_rows(db, "info_type", %w[id info], [
-  [1, "top 250 rank"], [2, "release dates"], [3, "runtime"], [4, "budget"]
-])
+              [1, "top 250 rank"], [2, "release dates"], [3, "runtime"], [4, "budget"]
+            ])
 insert_rows(db, "link_type", %w[id link], [[1, "sequel"], [2, "remake"]])
 insert_rows(db, "comp_cast_type", %w[id kind], [[1, "cast"], [2, "crew"]])
 
@@ -70,13 +72,18 @@ title_rows = (1..titles).map do |id|
   year = 1980 + (id % 45)
   [id, "Movie Title #{id}", nil, 1, year, id * 10, nil, nil, nil, nil, nil, SecureRandom.hex(16)]
 end
-insert_rows(db, "title", %w[id title imdb_index kind_id production_year imdb_id phonetic_code episode_of_id season_nr episode_nr series_years md5sum], title_rows)
+title_columns = %w[
+  id title imdb_index kind_id production_year imdb_id phonetic_code
+  episode_of_id season_nr episode_nr series_years md5sum
+]
+insert_rows(db, "title", title_columns, title_rows)
 
 name_rows = (1..names_count).map do |id|
   gender = id.even? ? "f" : "m"
   [id, "Person #{id}", nil, id, gender, nil, nil, nil, SecureRandom.hex(16)]
 end
-insert_rows(db, "name", %w[id name imdb_index imdb_id gender name_pcode_cf name_pcode_nf surname_pcode md5sum], name_rows)
+insert_rows(db, "name", %w[id name imdb_index imdb_id gender name_pcode_cf name_pcode_nf surname_pcode md5sum],
+            name_rows)
 
 char_rows = (1..(names_count / 2)).map do |id|
   [id, "Character #{id}", nil, id, nil, nil, SecureRandom.hex(16)]
@@ -145,7 +152,8 @@ end
 insert_rows(db, "movie_info", %w[id movie_id info_type_id info note], mi_rows)
 
 aka_name_rows = (1..names_count).map { |id| [id, id, "Aka Person #{id}", nil, nil, nil, nil, SecureRandom.hex(16)] }
-insert_rows(db, "aka_name", %w[id person_id name imdb_index name_pcode_cf name_pcode_nf surname_pcode md5sum], aka_name_rows)
+insert_rows(db, "aka_name", %w[id person_id name imdb_index name_pcode_cf name_pcode_nf surname_pcode md5sum],
+            aka_name_rows)
 
 indexes = File.read(File.join(ROOT, "benchmark", "fixtures", "job_indexes.sql"))
 indexes.split(/;\s*\n/).each do |statement|

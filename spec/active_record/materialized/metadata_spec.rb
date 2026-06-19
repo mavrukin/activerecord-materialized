@@ -6,7 +6,7 @@ RSpec.describe ActiveRecord::Materialized::Metadata do
   let(:view_class) do
     Class.new(ActiveRecord::Materialized::View) do
       self.table_name = "mv_metadata_test"
-      materialized_from "SELECT 1 AS id"
+      materialized_from { ViewSources.item_id_sample }
     end
   end
 

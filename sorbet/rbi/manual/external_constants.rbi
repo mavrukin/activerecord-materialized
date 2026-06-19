@@ -39,6 +39,18 @@ module ::ActiveRecord::Materialized::RefreshCallbacks::ClassMethods
   include ::Kernel
 end
 
+module ::ActiveRecord::Materialized::DependencyTrackable
+  class << self
+    extend T::Sig
+
+    sig { params(model_class: T.class_of(::ActiveRecord::Base)).void }
+    def subscribe(model_class); end
+
+    sig { void }
+    def reset!; end
+  end
+end
+
 module ::ActiveJob
   class Base < ::Object
     sig { params(block: T.proc.returns(T.any(Symbol, String))).void }

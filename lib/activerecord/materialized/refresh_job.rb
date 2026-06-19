@@ -8,10 +8,10 @@ module ActiveRecord
 
       queue_as { ::ActiveRecord::Materialized.configuration.refresh_queue_name }
 
-      sig { params(view_class_name: String).void }
-      def perform(view_class_name)
-        view_class = view_class_name.constantize
-        return unless view_class < View
+      sig { params(view_key: String).void }
+      def perform(view_key)
+        view_class = Registry.find(view_key)
+        return if view_class.nil?
         return unless view_class.dirty? || !view_class.table_exists?
 
         view_class.refresh!

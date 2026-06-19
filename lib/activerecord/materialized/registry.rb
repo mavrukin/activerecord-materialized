@@ -22,6 +22,11 @@ module ActiveRecord
           views[key.to_s]
         end
 
+        sig { params(class_name: String).returns(T.nilable(ViewClass)) }
+        def find_by_class_name(class_name)
+          all.find { |view| view.name == class_name }
+        end
+
         sig { returns(T::Array[ViewClass]) }
         def all
           views.values

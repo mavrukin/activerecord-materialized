@@ -3,6 +3,7 @@
 require_relative "support/benchmark_connection"
 require_relative "support/dataset_info"
 require_relative "support/sql_execution_recorder"
+require_relative "support/table_formatter"
 require "benchmark"
 
 class UpdateVerificationError < StandardError; end
@@ -15,32 +16,45 @@ def female_pairing_total(view)
   view.where(gender: "f").pick(:role_pairings).to_i
 end
 
+def create_simulated_cast_row!(max_cast_id, offset, female_ids, movie_ids)
+  Job::CastInfo.create!(
+    id: max_cast_id + offset + 1,
+    person_id: female_ids[offset % female_ids.size],
+    movie_id: movie_ids[offset % movie_ids.size],
+    person_role_id: 1,
+    note: "update-simulation",
+    nr_order: offset % 20,
+    role_id: 2
+  )
+end
+
+def cast_simulation_ids
+  [
+    Job::CastInfo.maximum(:id).to_i,
+    Job::Name.where(gender: "f").limit(100).pluck(:id),
+    Job::Title.where(Job::Title.arel_table[:production_year].gt(2000)).limit(100).pluck(:id)
+  ]
+end
+
 def insert_synthetic_cast_rows!(count:)
-  connection = ActiveRecord::Base.connection
-  max_cast_id = connection.select_value("SELECT COALESCE(MAX(id), 0) FROM cast_info").to_i
-  female_ids = connection.select_values("SELECT id FROM name WHERE gender = 'f' LIMIT 100")
-  movie_ids = connection.select_values("SELECT id FROM title WHERE production_year > 2000 LIMIT 100")
+  max_cast_id, female_ids, movie_ids = cast_simulation_ids
 
   assert_condition!("Need seed names and titles for update simulation", female_ids.any? && movie_ids.any?)
 
-  connection.transaction do
-    count.times do |offset|
-      cast_id = max_cast_id + offset + 1
-      person_id = female_ids[offset % female_ids.size]
-      movie_id = movie_ids[offset % movie_ids.size]
-      connection.execute(
-        "INSERT INTO cast_info (id, person_id, movie_id, person_role_id, note, nr_order, role_id) " \
-        "VALUES (#{cast_id}, #{person_id}, #{movie_id}, 1, 'update-simulation', #{offset % 20}, 2)"
-      )
-    end
+  ActiveRecord::Base.transaction do
+    count.times { |offset| create_simulated_cast_row!(max_cast_id, offset, female_ids, movie_ids) }
   end
 
   count
 end
 
+def print_summary_count_row(label, time, count)
+  BenchmarkSupport::TableFormatter.print_verify_row(stage: label, time: time, pairings: count)
+end
+
 def time_raw_gender_query
-  sql = File.read(BenchmarkSupport::BENCHMARK_ROOT.join("queries", "gender_pairing_stats.sql"))
-  elapsed, result = BenchmarkSupport.timed(iterations: 1) { ActiveRecord::Base.connection.select_all(sql).to_a }
+  relation = GenderPairingStatsView.resolved_source
+  elapsed, result = BenchmarkSupport.timed(iterations: 1) { relation.map(&:attributes) }
   [elapsed, result]
 end
 
@@ -63,7 +77,7 @@ bootstrap_ms = nil
 if view.table_exists?
   puts "1) Cache table present — skipping bootstrap"
 else
-  print "1) Bootstrap (one-time CREATE TABLE AS + atomic swap)..."
+  print "1) Bootstrap (one-time atomic swap)..."
   bootstrap_recorder = BenchmarkSupport::SqlExecutionRecorder.new.install!(connection)
   bootstrap_result = view.refresh!
   bootstrap_ms = bootstrap_result.duration_ms
@@ -74,6 +88,7 @@ else
   puts " #{bootstrap_result.row_count} rows in #{bootstrap_ms}ms"
 end
 
+ActiveRecord::Materialized::AsyncRefresher.reset!
 ActiveRecord::Materialized::AsyncRefresher.flush! if view.dirty?
 baseline = female_pairing_total(view)
 puts "   female role_pairings=#{baseline}"
@@ -107,7 +122,7 @@ assert_condition!(
   !maintenance_recorder.bootstrap_swap_detected?
 )
 assert_condition!(
-  "Incremental maintenance should use temp partition re-aggregation",
+  "Incremental maintenance should rewrite affected partitions in place",
   maintenance_recorder.incremental_maintenance_detected?
 )
 assert_condition!("View should be clean after maintenance", !view.dirty?)
@@ -115,7 +130,7 @@ assert_condition!("View should be clean after maintenance", !view.dirty?)
 raw_after_avg, raw_after_rows = time_raw_gender_query
 raw_female_total = raw_after_rows.find { |row| row["gender"] == "f" }&.fetch("role_pairings").to_i
 assert_condition!(
-  "Maintained MV should match raw query (mv=#{refreshed_total}, raw=#{raw_female_total})",
+  "Maintained MV should match source relation (mv=#{refreshed_total}, raw=#{raw_female_total})",
   refreshed_total == raw_female_total
 )
 assert_condition!("Maintained total should exceed baseline", refreshed_total > baseline)
@@ -130,16 +145,14 @@ assert_condition!(
 puts "6) Cached MV reads (post-maintenance): #{(mv_read_after_avg * 1000).round(2)}ms avg, value=#{refreshed_total}"
 
 puts
-printf("%-36s %14s %14s\n", "Stage", "Time", "female pairings")
+BenchmarkSupport::TableFormatter.print_verify_header
 puts "-" * 66
-if bootstrap_ms
-  printf("%-36s %14s %14s\n", "Bootstrap (one-time)", "#{bootstrap_ms}ms", "—")
-end
-printf("%-36s %14s %14d\n", "Cached read (pre-update)", "#{(mv_read_before_avg * 1000).round(2)}ms", baseline)
-printf("%-36s %14s %14d\n", "Cached read (stale)", "#{(stale_read_time * 1000).round(2)}ms", @stale_total)
-printf("%-36s %14s %14d\n", "Incremental maintenance", "#{(maintenance_time * 1000).round(0)}ms", refreshed_total)
-printf("%-36s %14s %14d\n", "Cached read (updated)", "#{(mv_read_after_avg * 1000).round(2)}ms", refreshed_total)
-printf("%-36s %14s %14d\n", "Raw query (reference)", "#{raw_after_avg.round(3)}s", raw_female_total)
+print_summary_count_row("Bootstrap (one-time)", "#{bootstrap_ms}ms", 0) if bootstrap_ms
+print_summary_count_row("Cached read (pre-update)", "#{(mv_read_before_avg * 1000).round(2)}ms", baseline)
+print_summary_count_row("Cached read (stale)", "#{(stale_read_time * 1000).round(2)}ms", @stale_total)
+print_summary_count_row("Incremental maintenance", "#{(maintenance_time * 1000).round(0)}ms", refreshed_total)
+print_summary_count_row("Cached read (updated)", "#{(mv_read_after_avg * 1000).round(2)}ms", refreshed_total)
+print_summary_count_row("Source relation (reference)", "#{raw_after_avg.round(3)}s", raw_female_total)
 puts
 puts "Verification passed: bootstrap once; writes trigger in-place maintenance;"
 puts "reads stay fast (stale then updated); no cache-table rebuild on hot path."

@@ -7,14 +7,25 @@ module ActiveRecord
       class << self
         extend T::Sig
 
-        sig { params(view_class: ViewClass, tables: T.any(Symbol, String, T::Array[T.any(Symbol, String)])).void }
+        sig do
+          params(
+            view_class: ViewClass,
+            tables: T.any(
+              Symbol,
+              String,
+              T.class_of(::ActiveRecord::Base),
+              T::Array[T.any(Symbol, String, T.class_of(::ActiveRecord::Base))]
+            )
+          ).void
+        end
         def register(view_class, tables)
-          normalized = Array(tables).map { |table| normalize_table(table) }
+          normalized = Array(tables).flat_map { |entry| normalize_dependency(entry) }
           T.unsafe(view_class).instance_variable_set(:@dependency_tables, normalized)
 
           normalized.each do |table|
             bucket = T.cast(dependency_index[table], T::Array[ViewClass])
             bucket << view_class unless bucket.include?(view_class)
+            subscribe_source_table!(table)
           end
         end
 
@@ -23,11 +34,10 @@ module ActiveRecord
           T.must(dependency_index[normalize_table(table)])
         end
 
-        sig { params(tables: T::Array[String], sql: T.nilable(String), sql_statements: T.nilable(T::Array[String])).void }
-        def schedule_refresh_for_tables!(tables, sql: nil, sql_statements: nil)
-          statements = sql_statements || [sql].compact
-          affected_views(tables).each do |view|
-            statements.each { |statement| view.record_write_delta!(statement) }
+        sig { params(change: WriteChange).void }
+        def publish_write_change!(change)
+          affected_views([change.table_name]).each do |view|
+            view.record_write_change!(change)
             RefreshScheduler.schedule(view)
           end
         end
@@ -40,27 +50,10 @@ module ActiveRecord
         sig { void }
         def reset!
           @dependency_index = Hash.new { |hash, key| hash[key] = [] }
-          @recorders = {}
-        end
-
-        sig { params(connection: Connection).returns(TransactionRefreshRecorder) }
-        def recorder_for(connection)
-          recorders[connection.object_id] ||= TransactionRefreshRecorder.new.tap do |recorder|
-            recorder.bind_connection!(connection)
-          end
-        end
-
-        sig { params(connection: Connection).void }
-        def clear_recorder(connection)
-          recorders.delete(connection.object_id)
+          ActiveRecord::Materialized::DependencyTrackable.reset!
         end
 
         private
-
-        sig { returns(T::Hash[Integer, TransactionRefreshRecorder]) }
-        def recorders
-          @recorders ||= T.let({}, T.nilable(T::Hash[Integer, TransactionRefreshRecorder]))
-        end
 
         sig { returns(T::Hash[String, T::Array[ViewClass]]) }
         def dependency_index
@@ -77,6 +70,22 @@ module ActiveRecord
 
             views_for_table(table)
           end.uniq
+        end
+
+        sig { params(entry: T.untyped).returns(T::Array[String]) }
+        def normalize_dependency(entry)
+          if entry.is_a?(Class) && entry < ::ActiveRecord::Base
+            TableModelRegistry.register(entry)
+            return [entry.table_name]
+          end
+
+          [normalize_table(entry)]
+        end
+
+        sig { params(table: String).void }
+        def subscribe_source_table!(table)
+          model = TableModelRegistry.resolve(table)
+          ActiveRecord::Materialized::DependencyTrackable.subscribe(model) if model
         end
 
         sig { params(table: T.any(Symbol, String)).returns(String) }

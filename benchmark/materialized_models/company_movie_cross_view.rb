@@ -3,7 +3,7 @@
 class CompanyMovieCrossView < ActiveRecord::Materialized::View
   self.table_name = "mv_company_movie_cross"
 
-  materialized_from File.read(File.expand_path("../queries/company_movie_cross.sql", __dir__))
+  materialized_from { BenchmarkSources.company_movie_cross_relation }
 
   depends_on :movie_companies, :company_name, :title, :cast_info, :movie_info
   refresh_on_change :async

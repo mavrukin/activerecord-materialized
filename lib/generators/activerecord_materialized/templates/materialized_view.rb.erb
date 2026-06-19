@@ -1,13 +1,16 @@
 # frozen_string_literal: true
 
 class <%= class_name %> < ActiveRecord::Materialized::View
-  self.table_name = "mv_<%= table_name %>"
+  self.table_name = "mv_<%= file_name %>"
 
-  materialized_from <<~SQL
-    SELECT 1 AS id
-  SQL
+  # Replace ApplicationRecord.none with your ActiveRecord::Relation source, e.g.:
+  #   Order.group(:status).select(
+  #     Order.arel_table[:status],
+  #     ActiveRecord::Materialized::QueryExpressions.count_as(Order.arel_table[:id], as: :order_count)
+  #   )
+  materialized_from { ApplicationRecord.none }
 
-  depends_on :base_table
+  depends_on :application_record
   refresh_on_change :async
   refresh_debounce 2.seconds
   max_staleness 12.hours

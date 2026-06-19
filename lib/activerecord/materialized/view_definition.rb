@@ -6,15 +6,15 @@ module ActiveRecord
     class ViewDefinition
       extend T::Sig
 
-      GROUP_BY_PATTERN = T.let(
-        /\bGROUP\s+BY\s+(.+?)(?=\s+\bHAVING\b|\s+\bORDER\s+BY\b|\s+\bLIMIT\b|\s*$)/im,
-        Regexp
-      )
-      WHERE_PATTERN = T.let(/\bWHERE\b/i, Regexp)
-
-      sig { params(source_sql: String).void }
-      def initialize(source_sql)
-        @source_sql = T.let(source_sql.strip, String)
+      sig do
+        params(
+          source: ::ActiveRecord::Relation,
+          explicit_group_keys: T.nilable(T::Array[String])
+        ).void
+      end
+      def initialize(source, explicit_group_keys: nil)
+        @source = source
+        @explicit_group_keys = explicit_group_keys
       end
 
       sig { returns(T::Boolean) }
@@ -25,77 +25,89 @@ module ActiveRecord
       sig { returns(T::Array[String]) }
       def group_key_columns
         @group_key_columns = T.let(@group_key_columns, T.nilable(T::Array[String]))
-        @group_key_columns ||= parse_group_key_columns
+        @group_key_columns ||= resolve_group_key_columns
       end
 
-      sig { params(key_tuples: T::Array[T::Array[String]]).returns(String) }
-      def scoped_source_sql(key_tuples)
-        raise ArgumentError, "scoped maintenance requires GROUP BY keys" unless incrementally_maintainable?
-        raise ArgumentError, "scoped maintenance requires at least one partition key" if key_tuples.empty?
+      sig { params(key_tuples: T::Array[T::Array[T.untyped]]).returns(::ActiveRecord::Relation) }
+      def scoped_source(key_tuples)
+        partition_scope(key_tuples)
+      end
 
-        inject_predicate(build_partition_predicate(key_tuples))
+      sig do
+        params(
+          model: T.class_of(::ActiveRecord::Base),
+          key_tuples: T::Array[T::Array[T.untyped]]
+        ).returns(::ActiveRecord::Relation)
+      end
+      def partition_scope_on(model, key_tuples)
+        validate_partition_keys!(key_tuples)
+        build_partition_scope(model.unscoped, key_tuples)
+      end
+
+      sig { params(key_tuples: T::Array[T::Array[T.untyped]]).returns(::ActiveRecord::Relation) }
+      def partition_scope(key_tuples)
+        validate_partition_keys!(key_tuples)
+        build_partition_scope(relation, key_tuples)
       end
 
       private
 
+      sig { returns(::ActiveRecord::Relation) }
+      attr_reader :source
+
+      sig { returns(::ActiveRecord::Relation) }
+      def relation
+        @source
+      end
+
       sig { returns(T::Array[String]) }
-      def parse_group_key_columns
-        match = @source_sql.match(GROUP_BY_PATTERN)
-        return [] unless match
+      def resolve_group_key_columns
+        return @explicit_group_keys if @explicit_group_keys&.any?
 
-        T.must(match[1]).split(",").map { |column| normalize_column_name(column.strip) }
+        relation_group_columns
       end
 
-      sig { params(expression: String).returns(String) }
-      def normalize_column_name(expression)
-        expression.split(/\s+AS\s+/i).first.to_s.strip
+      sig { returns(T::Array[String]) }
+      def relation_group_columns
+        relation.group_values.filter_map { |group_value| group_column_name(group_value) }
       end
 
-      sig { params(key_tuples: T::Array[T::Array[String]]).returns(String) }
-      def build_partition_predicate(key_tuples)
+      sig { params(group_value: T.untyped).returns(T.nilable(String)) }
+      def group_column_name(group_value)
+        case group_value
+        when String, Symbol
+          group_value.to_s
+        when ::Arel::Attributes::Attribute
+          T.unsafe(group_value).name.to_s
+        else
+          group_value.to_s if group_value.respond_to?(:to_s)
+        end
+      end
+
+      sig { params(key_tuples: T::Array[T::Array[T.untyped]]).void }
+      def validate_partition_keys!(key_tuples)
+        raise ArgumentError, "scoped maintenance requires GROUP BY keys" unless incrementally_maintainable?
+        raise ArgumentError, "scoped maintenance requires at least one partition key" if key_tuples.empty?
+      end
+
+      sig do
+        params(
+          scope: ::ActiveRecord::Relation,
+          key_tuples: T::Array[T::Array[T.untyped]]
+        ).returns(::ActiveRecord::Relation)
+      end
+      def build_partition_scope(scope, key_tuples)
         columns = group_key_columns
         if columns.size == 1
-          column = quote_identifier(columns.fetch(0))
-          values = key_tuples.map { |tuple| quote_literal(tuple.fetch(0)) }.join(", ")
-          "#{column} IN (#{values})"
-        else
-          column_list = columns.map { |column| quote_identifier(column) }.join(", ")
-          tuple_list = key_tuples.map do |tuple|
-            "(#{tuple.map { |value| quote_literal(value) }.join(', ')})"
-          end.join(", ")
-          "(#{column_list}) IN (#{tuple_list})"
+          column = columns.fetch(0)
+          return scope.where(column => key_tuples.map(&:first))
         end
-      end
 
-      sig { params(predicate: String).returns(String) }
-      def inject_predicate(predicate)
-        group_match = @source_sql.match(/\bGROUP\s+BY\b/i)
-        raise ArgumentError, "materialized_from must include GROUP BY for incremental maintenance" unless group_match
-
-        split_at = group_match.begin(0)
-        before_group = T.must(@source_sql[0...split_at]).strip
-        from_group = @source_sql[split_at..].to_s
-
-        if before_group.match?(WHERE_PATTERN)
-          "#{before_group} AND (#{predicate}) #{from_group}"
-        else
-          "#{before_group} WHERE #{predicate} #{from_group}"
+        key_tuples.reduce(T.unsafe(nil)) do |merged_scope, tuple|
+          attributes = columns.each_with_index.to_h { |column, index| [column, tuple[index]] }
+          branch = scope.where(attributes)
+          merged_scope.nil? ? branch : merged_scope.or(branch)
         end
-      end
-
-      sig { params(identifier: String).returns(String) }
-      def quote_identifier(identifier)
-        if identifier.include?(".")
-          table, column = identifier.split(".", 2)
-          %("#{table}"."#{column}")
-        else
-          %("#{identifier}")
-        end
-      end
-
-      sig { params(value: String).returns(String) }
-      def quote_literal(value)
-        "'#{value.gsub("'", "''")}'"
       end
     end
   end

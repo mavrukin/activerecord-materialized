@@ -28,7 +28,7 @@ module ActiveRecord
         sig { params(view_class: ViewClass).void }
         def dispatch_async(view_class)
           if use_active_job?
-            T.unsafe(RefreshJob).perform_later(view_class.name)
+            T.unsafe(RefreshJob).perform_later(view_class.view_key)
           else
             AsyncRefresher.enqueue(view_class)
           end

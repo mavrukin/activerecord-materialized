@@ -43,13 +43,13 @@ The [Join Order Benchmark](https://github.com/gregrahn/join-order-benchmark) use
 
 ## Slow queries (seconds-scale)
 
-On the `xlarge` synthetic dataset, these queries consistently run in the **1–5 second** range on SQLite:
+On the `xlarge` synthetic dataset, these views consistently run in the **1–5 second** range on SQLite:
 
-| File | Typical raw time |
+| View | Typical raw time |
 |------|------------------|
-| `benchmark/queries/gender_pairing_stats.sql` | ~2.7s |
-| `benchmark/queries/company_movie_cross.sql` | ~2.2s |
-| `benchmark/queries/person_movie_network.sql` | ~4.5s |
+| `GenderPairingStatsView` | ~2.7s |
+| `CompanyMovieCrossView` | ~2.2s |
+| `PersonMovieNetworkView` | ~4.5s |
 
 ```bash
 JOB_SCALE=xlarge bundle exec rake benchmark:setup   # required for benchmark:slow
@@ -83,8 +83,10 @@ Compare scripts (`rake benchmark`, `rake benchmark:slow`) measure **bootstrap** 
 
 Benchmark queries are adapted from JOB:
 
-- `1a` → `benchmark/queries/production_notes.sql`
-- `10a` → `benchmark/queries/russian_voice_actors.sql`
-- `19d` → `benchmark/queries/voicing_actresses.sql`
+JOB query mappings (see `benchmark/support/source_relations.rb`):
+
+- `1a` → `BenchmarkSources.production_notes_relation`
+- `10a` → `BenchmarkSources.russian_voice_actors_relation`
+- `19d` → `BenchmarkSources.voicing_actresses_relation`
 
 All 113 JOB queries are available in the [join-order-benchmark repository](https://github.com/gregrahn/join-order-benchmark).

@@ -28,6 +28,8 @@ module BenchmarkSupport
     module_function
 
     def collect(connection: ActiveRecord::Base.connection, db_path: default_db_path)
+      require_relative "job_models"
+      Job.register_models!
       cast_info_rows = count_rows(connection, "cast_info")
       title_rows = count_rows(connection, "title")
       movie_companies_rows = count_rows(connection, "movie_companies")
@@ -45,11 +47,16 @@ module BenchmarkSupport
     def print_report(stats)
       puts "Dataset profile:"
       puts "  detected scale: #{stats.detected_scale}"
-      puts "  cast_info rows: #{stats.cast_info_rows.to_s.reverse.gsub(/(\d{3})(?=\d)/, '\\1,').reverse}"
-      puts "  title rows:     #{stats.title_rows.to_s.reverse.gsub(/(\d{3})(?=\d)/, '\\1,').reverse}"
-      puts "  movie_companies rows: #{stats.movie_companies_rows.to_s.reverse.gsub(/(\d{3})(?=\d)/, '\\1,').reverse}"
+      puts formatted_row("cast_info rows", stats.cast_info_rows)
+      puts formatted_row("title rows", stats.title_rows)
+      puts formatted_row("movie_companies rows", stats.movie_companies_rows)
       puts "  scale marker:   #{stats.scale_file || 'none (run benchmark:setup to create)'}"
       puts
+    end
+
+    def formatted_row(label, count)
+      formatted_count = count.to_s.reverse.gsub(/(\d{3})(?=\d)/, '\\1,').reverse
+      "  #{label}: #{formatted_count}"
     end
 
     def ensure_slow_benchmark!(stats)
@@ -90,8 +97,9 @@ module BenchmarkSupport
       ENV.fetch("JOB_DB", BenchmarkSupport::BENCHMARK_ROOT.join("fixtures", "job.sqlite").to_s)
     end
 
-    def count_rows(connection, table)
-      connection.select_value("SELECT COUNT(*) FROM #{table}").to_i
+    def count_rows(_connection, table)
+      model = Job::MODELS.find { |candidate| candidate.table_name == table }
+      model ? model.count : 0
     end
   end
 end

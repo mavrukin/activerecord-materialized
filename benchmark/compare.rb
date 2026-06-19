@@ -1,69 +1,22 @@
 # frozen_string_literal: true
 
-require "active_record"
-require "benchmark"
-require "pathname"
+require_relative "support/benchmark_connection"
+require_relative "support/table_formatter"
 
-BENCHMARK_ROOT = Pathname.new(__dir__).expand_path
-GEM_ROOT = BENCHMARK_ROOT.join("..").expand_path
-$LOAD_PATH.unshift GEM_ROOT.join("lib").to_s
-require "activerecord-materialized"
-
-DB_PATH = ENV.fetch("JOB_DB", BENCHMARK_ROOT.join("fixtures", "job.sqlite").to_s)
-
-unless File.exist?(DB_PATH)
-  warn "Database not found at #{DB_PATH}. Run: rake benchmark:setup"
-  load BENCHMARK_ROOT.join("scripts", "generate_job_database.rb").to_s
-end
-
-ActiveRecord::Base.establish_connection(
-  adapter: "sqlite3",
-  database: DB_PATH
-)
-
-class JobRecord < ActiveRecord::Base
-  self.abstract_class = true
-end
-
-Dir[BENCHMARK_ROOT.join("models", "*.rb")].sort.each { |file| require file }
-Dir[BENCHMARK_ROOT.join("materialized_models", "*.rb")].sort.each { |file| require file }
+db_path = BenchmarkSupport.connect!
 
 QUERIES = [
-  {
-    name: "gender_pairing_stats (slow)",
-    raw_sql_file: "gender_pairing_stats.sql",
-    materialized: GenderPairingStatsView
-  },
-  {
-    name: "company_movie_cross (slow)",
-    raw_sql_file: "company_movie_cross.sql",
-    materialized: CompanyMovieCrossView
-  },
-  {
-    name: "person_movie_network (slow)",
-    raw_sql_file: "person_movie_network.sql",
-    materialized: PersonMovieNetworkView
-  },
-  {
-    name: "production_notes (JOB 1a)",
-    raw_sql_file: "production_notes.sql",
-    materialized: ProductionNotesView
-  },
-  {
-    name: "russian_voice_actors (JOB 10a)",
-    raw_sql_file: "russian_voice_actors.sql",
-    materialized: RussianVoiceActorsView
-  },
-  {
-    name: "voicing_actresses (JOB 19d)",
-    raw_sql_file: "voicing_actresses.sql",
-    materialized: VoicingActressesView
-  }
+  { name: "gender_pairing_stats (slow)", materialized: GenderPairingStatsView },
+  { name: "company_movie_cross (slow)", materialized: CompanyMovieCrossView },
+  { name: "person_movie_network (slow)", materialized: PersonMovieNetworkView },
+  { name: "production_notes (JOB 1a)", materialized: ProductionNotesView },
+  { name: "russian_voice_actors (JOB 10a)", materialized: RussianVoiceActorsView },
+  { name: "voicing_actresses (JOB 19d)", materialized: VoicingActressesView }
 ].freeze
 
 ITERATIONS = Integer(ENV.fetch("BENCH_ITERATIONS", "5"))
 
-def timed(label)
+def timed(_label)
   times = []
   result = nil
   ITERATIONS.times do
@@ -76,18 +29,18 @@ end
 
 puts "=" * 72
 puts "ActiveRecord::Materialized Benchmark"
-puts "Database: #{DB_PATH}"
+puts "Database: #{db_path}"
 puts "Iterations per query: #{ITERATIONS}"
 puts "=" * 72
 
 results = QUERIES.map do |query|
-  raw_sql = File.read(BENCHMARK_ROOT.join("queries", query[:raw_sql_file]))
+  source_relation = query[:materialized].resolved_source
 
   print "Bootstrap refresh (one-time) for #{query[:name]}..."
   refresh_result = query[:materialized].refresh!
   puts " #{refresh_result.row_count} rows in #{refresh_result.duration_ms}ms"
 
-  raw_avg, raw_result, = timed("raw") { ActiveRecord::Base.connection.select_all(raw_sql).to_a }
+  raw_avg, raw_result, = timed("raw") { source_relation.map(&:attributes) }
   mv_avg, mv_result, = timed("materialized") { query[:materialized].all.map(&:attributes) }
 
   speedup = mv_avg.zero? ? Float::INFINITY : raw_avg / mv_avg
@@ -103,16 +56,15 @@ results = QUERIES.map do |query|
 end
 
 puts
-printf("%-35s %12s %12s %10s %8s\n", "Query", "Raw (s)", "MV read (s)", "Bootstrap(ms)", "Speedup")
+BenchmarkSupport::TableFormatter.print_compare_header
 puts "-" * 72
 results.each do |row|
-  printf(
-    "%-35s %12.4f %12.4f %10d %8.1fx\n",
-    row[:name],
-    row[:raw_avg],
-    row[:mv_avg],
-    row[:refresh_ms],
-    row[:speedup]
+  BenchmarkSupport::TableFormatter.print_compare_row(
+    query: row[:name],
+    raw: row[:raw_avg],
+    mv_read: row[:mv_avg],
+    refresh: row[:refresh_ms],
+    speedup: row[:speedup]
   )
 end
 

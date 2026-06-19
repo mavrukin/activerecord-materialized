@@ -3,7 +3,7 @@
 class GenderPairingStatsView < ActiveRecord::Materialized::View
   self.table_name = "mv_gender_pairing_stats"
 
-  materialized_from File.read(File.expand_path("../queries/gender_pairing_stats.sql", __dir__))
+  materialized_from { BenchmarkSources.gender_pairing_stats_relation }
 
   depends_on :cast_info, :name, :title, :movie_companies, :movie_info
   refresh_on_change :async

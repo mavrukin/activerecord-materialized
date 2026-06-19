@@ -3,8 +3,8 @@
 module BenchmarkSupport
   class SqlExecutionRecorder
     RENAME_PATTERN = /ALTER TABLE .* RENAME TO/i
-    BOOTSTRAP_REFRESH_PATTERN = /CREATE TABLE (?!TEMP\b).*?_refresh_/i
-    INCREMENTAL_TEMP_PATTERN = /CREATE TEMP TABLE .*?_maint_/i
+    BOOTSTRAP_REFRESH_PATTERN = /CREATE TABLE .*?_refresh_/i
+    MAINTENANCE_WRITE_PATTERN = /(?:DELETE FROM|INSERT INTO) /i
 
     def initialize
       @statements = []
@@ -23,7 +23,8 @@ module BenchmarkSupport
     end
 
     def incremental_maintenance_detected?
-      @statements.any? { |statement| statement.match?(INCREMENTAL_TEMP_PATTERN) }
+      @statements.any? { |statement| statement.match?(MAINTENANCE_WRITE_PATTERN) } &&
+        !bootstrap_swap_detected?
     end
 
     def install!(connection)
@@ -32,6 +33,16 @@ module BenchmarkSupport
         define_method(:execute) do |sql, *args, **kwargs, &block|
           recorder.record(sql)
           super(sql, *args, **kwargs, &block)
+        end
+
+        define_method(:rename_table) do |table_name, new_name, **kwargs|
+          recorder.record("ALTER TABLE #{table_name} RENAME TO #{new_name}")
+          super(table_name, new_name, **kwargs)
+        end
+
+        define_method(:create_table) do |table_name, **kwargs, &block|
+          recorder.record("CREATE TABLE #{table_name}")
+          super(table_name, **kwargs, &block)
         end
       end)
       self
