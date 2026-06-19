@@ -19,6 +19,13 @@ module ActiveRecord
           model_class.instance_variable_set(TRACKABLE_FLAG, true)
         end
 
+        # Invoked from the model commit callbacks below; `record` is the
+        # committed instance whose write should refresh dependent views.
+        sig { params(record: ::ActiveRecord::Base, operation: WriteChange::Operation).void }
+        def publish(record, operation)
+          DependencyRegistry.publish_write_change!(WriteChange.from_record(record, operation))
+        end
+
         sig { void }
         def reset!
           nil
@@ -28,26 +35,10 @@ module ActiveRecord
 
         sig { params(model_class: T.class_of(::ActiveRecord::Base)).void }
         def install_callbacks!(model_class)
-          T.unsafe(Kernel).eval(callback_installation_source, T.unsafe(binding), __FILE__, __LINE__)
-        end
-
-        sig { returns(String) }
-        def callback_installation_source
-          <<~RUBY
-            model_class.class_eval do
-              after_create_commit do
-                DependencyRegistry.publish_write_change!(WriteChange.from_record(self, :create))
-              end
-
-              after_update_commit do
-                DependencyRegistry.publish_write_change!(WriteChange.from_record(self, :update))
-              end
-
-              after_destroy_commit do
-                DependencyRegistry.publish_write_change!(WriteChange.from_record(self, :destroy))
-              end
-            end
-          RUBY
+          model = T.unsafe(model_class)
+          model.after_create_commit { DependencyTrackable.publish(T.unsafe(self), :create) }
+          model.after_update_commit { DependencyTrackable.publish(T.unsafe(self), :update) }
+          model.after_destroy_commit { DependencyTrackable.publish(T.unsafe(self), :destroy) }
         end
       end
     end
