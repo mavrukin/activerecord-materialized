@@ -2,22 +2,20 @@
 
 require_relative "lib/activerecord/materialized/version"
 
-def gem_files
-  reject_sqlite = lambda do |file|
-    file.start_with?("benchmark/fixtures/job.sqlite") || file.end_with?(".sqlite")
-  end
+reject_sqlite = lambda do |file|
+  file.start_with?("benchmark/fixtures/job.sqlite") || file.end_with?(".sqlite")
+end
 
-  fallback = lambda do
-    Dir["{lib,spec,benchmark}/**/*", "LICENSE", "README.md", "CHANGELOG.md", "Rakefile", "Gemfile"]
-      .reject(&reject_sqlite)
-  end
+fallback_files = lambda do
+  Dir["{lib,spec,benchmark}/**/*", "LICENSE", "README.md", "CHANGELOG.md", "Rakefile", "Gemfile"]
+    .reject(&reject_sqlite)
+end
 
-  Dir.chdir(__dir__) do
-    next fallback.call unless File.directory?(".git")
+GEM_FILES = Dir.chdir(__dir__) do
+  next fallback_files.call unless File.directory?(".git")
 
-    files = `git ls-files -z 2>/dev/null`.split("\x0").reject(&reject_sqlite)
-    files.empty? ? fallback.call : files
-  end
+  files = `git ls-files -z 2>/dev/null`.split("\x0").reject(&reject_sqlite)
+  files.empty? ? fallback_files.call : files
 end
 
 Gem::Specification.new do |spec|
@@ -40,7 +38,7 @@ Gem::Specification.new do |spec|
   spec.metadata["source_code_uri"] = "https://github.com/mavrukin/activerecord-materialized"
   spec.metadata["rubygems_mfa_required"] = "true"
 
-  spec.files = gem_files
+  spec.files = GEM_FILES
 
   spec.require_paths = ["lib"]
 

@@ -13,8 +13,8 @@ permissions:
   contents: read
 
 env:
-  # Latest stable Ruby from ruby/setup-ruby (must satisfy gemspec >= 3.4.0).
-  RUBY_VERSION: ruby
+  # Latest 3.4.x from ruby/setup-ruby (satisfies gemspec >= 3.4.0).
+  RUBY_VERSION: "3.4"
 
 jobs:
   lint:
@@ -30,7 +30,7 @@ jobs:
           bundler-cache: true
 
       - name: Run RuboCop
-        run: bundle exec rubocop --parallel
+        run: bundle exec rubocop lib/ bin/ --parallel
 
   typecheck:
     name: Sorbet

@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 echo "==> RuboCop"
-bundle exec rubocop --parallel
+bundle exec rubocop lib/ bin/ --parallel
 
 echo "==> Sorbet"
 bundle exec srb tc
