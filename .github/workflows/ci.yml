@@ -1,3 +1,4 @@
+# Full validation: local lefthook hooks scope checks to changed files for speed.
 name: CI
 
 on:

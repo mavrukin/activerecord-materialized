@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "$#" -eq 0 ]]; then
+  echo "No changed files; skipping RSpec"
+  exit 0
+fi
+
+specs=$(bin/affected-specs "$@")
+
+if [[ -z "$specs" ]]; then
+  echo "No affected specs; skipping RSpec"
+  exit 0
+fi
+
+echo "Running affected specs:"
+printf '  %s\n' $specs
+exec bundle exec rspec $specs
