@@ -35,6 +35,11 @@ Style/Documentation:
 Style/StringLiterals:
   EnforcedStyle: double_quotes
 
+Style/FormatStringToken:
+  Exclude:
+    - "benchmark/compare.rb"
+    - "benchmark/compare_slow.rb"
+
 Metrics/BlockLength:
   Exclude:
     - "spec/**/*"
@@ -47,6 +52,7 @@ Metrics/MethodLength:
     - "lib/activerecord/materialized/view.rb"
     - "lib/activerecord/materialized/refresher.rb"
     - "lib/activerecord/materialized/metadata.rb"
+    - "benchmark/support/source_relations.rb"
 
 Metrics/CyclomaticComplexity:
   Exclude:
@@ -82,6 +88,10 @@ Metrics/ClassLength:
     - "lib/activerecord/materialized/view.rb"
     - "lib/activerecord/materialized/metadata.rb"
 
+Metrics/ModuleLength:
+  Exclude:
+    - "benchmark/support/source_relations.rb"
+
 Metrics/AbcSize:
   Exclude:
     - "lib/activerecord/materialized/view.rb"
@@ -90,6 +100,9 @@ Metrics/AbcSize:
     - "lib/activerecord/materialized/tasks.rb"
     - "lib/activerecord/materialized/incremental_maintainer.rb"
     - "lib/activerecord/materialized/view_definition.rb"
+    - "benchmark/support/source_relations.rb"
+    - "benchmark/support/dataset_info.rb"
+    - "benchmark/verify_updates.rb"
 
 Lint/HashCompareByIdentity:
   Exclude:
@@ -114,6 +127,8 @@ RSpec/SpecFilePathFormat:
     - "spec/activerecord/materialized/view_definition_spec.rb"
     - "spec/activerecord/materialized/maintenance_delta_spec.rb"
     - "spec/activerecord/materialized/refresher_spec.rb"
+    - "spec/activerecord/materialized/metadata_spec.rb"
+    - "spec/activerecord/materialized/registry_spec.rb"
 
 RSpec/HookArgument:
   Enabled: false
@@ -131,6 +146,7 @@ RSpec/ExampleLength:
   Max: 15
   Exclude:
     - "spec/integration/benchmark_update_verification_spec.rb"
+    - "spec/activerecord/materialized/registry_spec.rb"
 
 RSpec/BeforeAfterAll:
   Exclude:

@@ -8,7 +8,7 @@ module ActiveRecord
 
       sig do
         params(
-          source: T.any(String, ::ActiveRecord::Relation),
+          source: ::ActiveRecord::Relation,
           explicit_group_keys: T.nilable(T::Array[String])
         ).void
       end
@@ -28,9 +28,9 @@ module ActiveRecord
         @group_key_columns ||= resolve_group_key_columns
       end
 
-      sig { params(key_tuples: T::Array[T::Array[T.untyped]]).returns(String) }
-      def scoped_source_sql(key_tuples)
-        partition_scope(key_tuples).to_sql
+      sig { params(key_tuples: T::Array[T::Array[T.untyped]]).returns(::ActiveRecord::Relation) }
+      def scoped_source(key_tuples)
+        partition_scope(key_tuples)
       end
 
       sig do
@@ -47,34 +47,24 @@ module ActiveRecord
       sig { params(key_tuples: T::Array[T::Array[T.untyped]]).returns(::ActiveRecord::Relation) }
       def partition_scope(key_tuples)
         validate_partition_keys!(key_tuples)
-        raise ArgumentError, "scoped maintenance requires an ActiveRecord::Relation source" unless relation_source?
-
         build_partition_scope(relation, key_tuples)
-      end
-
-      sig { returns(String) }
-      def source_sql
-        relation_source? ? relation.to_sql : T.cast(@source, String).strip
       end
 
       private
 
-      sig { returns(T::Array[String]) }
-      def resolve_group_key_columns
-        return @explicit_group_keys if @explicit_group_keys&.any?
-        return relation_group_columns if relation_source?
-
-        []
-      end
+      sig { returns(::ActiveRecord::Relation) }
+      attr_reader :source
 
       sig { returns(::ActiveRecord::Relation) }
       def relation
-        T.cast(@source, ::ActiveRecord::Relation)
+        @source
       end
 
-      sig { returns(T::Boolean) }
-      def relation_source?
-        @source.is_a?(::ActiveRecord::Relation)
+      sig { returns(T::Array[String]) }
+      def resolve_group_key_columns
+        return @explicit_group_keys if @explicit_group_keys&.any?
+
+        relation_group_columns
       end
 
       sig { returns(T::Array[String]) }

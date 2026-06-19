@@ -29,7 +29,7 @@ end
 def insert_synthetic_cast_rows!(count:)
   max_cast_id = Job::CastInfo.maximum(:id).to_i
   female_ids = Job::Name.where(gender: "f").limit(100).pluck(:id)
-  movie_ids = Job::Title.where("production_year > 2000").limit(100).pluck(:id)
+  movie_ids = Job::Title.where(Job::Title.arel_table[:production_year].gt(2000)).limit(100).pluck(:id)
 
   assert_condition!("Need seed names and titles for update simulation", female_ids.any? && movie_ids.any?)
 
@@ -49,8 +49,8 @@ def print_summary_count_row(label, time, count)
 end
 
 def time_raw_gender_query
-  sql = File.read(BenchmarkSupport::BENCHMARK_ROOT.join("queries", "gender_pairing_stats.sql"))
-  elapsed, result = BenchmarkSupport.timed(iterations: 1) { ActiveRecord::Base.connection.select_all(sql).to_a }
+  relation = GenderPairingStatsView.resolved_source
+  elapsed, result = BenchmarkSupport.timed(iterations: 1) { relation.map(&:attributes) }
   [elapsed, result]
 end
 

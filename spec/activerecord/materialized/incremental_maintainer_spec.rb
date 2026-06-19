@@ -7,9 +7,7 @@ RSpec.describe ActiveRecord::Materialized::IncrementalMaintainer do
     Class.new(ActiveRecord::Materialized::View) do
       self.table_name = "mv_incremental_sales_summary"
 
-      materialized_from lambda {
-        Item.group(:category).select("category, SUM(amount) AS total_amount, COUNT(*) AS row_count")
-      }
+      materialized_from { ViewSources.sales_by_category }
     end
   end
 
@@ -30,7 +28,7 @@ RSpec.describe ActiveRecord::Materialized::IncrementalMaintainer do
       view_class.record_write_change!(ActiveRecord::Materialized::WriteChange.from_record(item, :create))
       described_class.new(view_class).maintain!(connection, view_class.table_name)
 
-      expect(connection).not_to have_received(:execute).with(/CREATE TABLE .*_refresh_/)
+      expect(connection).not_to have_received(:execute)
       expect(view_class.order(:category).pluck(:category, :total_amount)).to eq(
         [["books", 115], ["games", 20]]
       )

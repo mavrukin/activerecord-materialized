@@ -8,11 +8,12 @@ Example:
   class SalesSummary < ActiveRecord::Materialized::View
     self.table_name = "mv_sales_summary"
 
-    materialized_from <<~SQL
-      SELECT category, SUM(amount) AS total
-      FROM line_items
-      GROUP BY category
-    SQL
+    materialized_from do
+      LineItem.group(:category).select(
+        LineItem.arel_table[:category],
+        ActiveRecord::Materialized::QueryExpressions.sum_as(LineItem.arel_table[:amount], as: :total)
+      )
+    end
 
     depends_on :line_items
     max_staleness 12.hours

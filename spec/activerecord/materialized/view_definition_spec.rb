@@ -5,24 +5,19 @@ require "spec_helper"
 RSpec.describe ActiveRecord::Materialized::ViewDefinition do
   subject(:definition) { described_class.new(source) }
 
-  let(:source) do
-    Item.group(:category)
-        .select("category, SUM(amount) AS total_amount, COUNT(*) AS row_count")
-        .having("SUM(amount) > 5")
-  end
+  let(:source) { ViewSources.sales_by_category.having(Item.arel_table[:amount].sum.gt(5)) }
 
   it "detects incrementally maintainable aggregate views from ActiveRecord relations" do
     expect(definition.incrementally_maintainable?).to be(true)
     expect(definition.group_key_columns).to eq(["category"])
   end
 
-  it "builds scoped maintenance SQL for affected partitions" do
-    scoped = definition.scoped_source_sql([["books"], ["games"]])
+  it "builds scoped maintenance relations for affected partitions" do
+    Item.delete_all
+    Item.create!(category: "books", amount: 10)
+    Item.create!(category: "games", amount: 20)
 
-    expect(scoped).to include("category")
-    expect(scoped).to include("books")
-    expect(scoped).to include("games")
-    expect(scoped).to include("GROUP BY")
-    expect(scoped).to include("HAVING")
+    scoped = definition.scoped_source([["books"]])
+    expect(scoped.map { |row| row.attributes["category"] }).to eq(["books"])
   end
 end

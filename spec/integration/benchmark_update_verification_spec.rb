@@ -15,6 +15,7 @@ RSpec.describe "benchmark update verification", :benchmark do
 
     ActiveRecord::Base.establish_connection(adapter: "sqlite3", database: db_path.to_s)
     load BENCHMARK_ROOT.join("support", "benchmark_connection.rb")
+    require BENCHMARK_ROOT.join("support", "source_relations.rb").to_s
     BenchmarkSupport.load_materialized_models!
   end
 
@@ -35,7 +36,7 @@ RSpec.describe "benchmark update verification", :benchmark do
 
     max_id = Job::CastInfo.maximum(:id).to_i
     person_id = Job::Name.where(gender: "f").pick(:id)
-    movie_id = Job::Title.where("production_year > 2000").pick(:id)
+    movie_id = Job::Title.where(Job::Title.arel_table[:production_year].gt(2000)).pick(:id)
 
     Job::CastInfo.create!(
       id: max_id + 1,

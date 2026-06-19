@@ -51,33 +51,14 @@ module ActiveRecord
 
       sig { params(force: T::Boolean).returns(Integer) }
       def perform_refresh!(force: false)
-        source = view_class.resolved_source
-        relation = source.is_a?(::ActiveRecord::Relation) ? source : nil
+        relation = view_class.resolved_source
 
         if force || view_class.resolved_refresh_mode == :full || !view_class.table_exists?
-          refresh_full!(relation)
+          RelationCacheWriter.new(view_class).atomic_swap!(relation)
         elsif view_class.incrementally_maintainable?
           IncrementalMaintainer.new(view_class).maintain!(view_class.connection, view_class.table_name)
         else
-          refresh_truncate!(relation)
-        end
-      end
-
-      sig { params(relation: T.nilable(::ActiveRecord::Relation)).returns(Integer) }
-      def refresh_full!(relation)
-        if relation
-          RelationCacheWriter.new(view_class).atomic_swap!(relation)
-        else
-          SqlCacheWriter.new(view_class).atomic_swap!(view_class.resolved_source_sql)
-        end
-      end
-
-      sig { params(relation: T.nilable(::ActiveRecord::Relation)).returns(Integer) }
-      def refresh_truncate!(relation)
-        if relation
           RelationCacheWriter.new(view_class).bootstrap!(relation)
-        else
-          SqlCacheWriter.new(view_class).replace_all!(view_class.resolved_source_sql)
         end
       end
     end

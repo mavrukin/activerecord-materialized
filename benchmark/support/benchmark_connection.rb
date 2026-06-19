@@ -25,7 +25,7 @@ module BenchmarkSupport
 
     db_path = ensure_database!(default_db_path)
     ActiveRecord::Base.establish_connection(adapter: "sqlite3", database: db_path)
-    require_relative "sql_loader"
+    require_relative "source_relations"
     load_materialized_models!
     db_path
   end
@@ -37,7 +37,6 @@ module BenchmarkSupport
 
   def self.load_materialized_models!
     load_job_models!
-    require_relative "sql_loader"
     Dir[BENCHMARK_ROOT.join("materialized_models", "*.rb")].each { |file| require file }
   end
 

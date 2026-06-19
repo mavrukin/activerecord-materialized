@@ -53,9 +53,9 @@ module ActiveRecord
           table.presence || "anonymous_view_#{object_id}"
         end
 
-        sig { params(sql: T.nilable(SourceDefinition), block: T.nilable(T.proc.returns(String))).void }
-        def materialized_from(sql = nil, &block)
-          @source_definition = T.let(sql || block, T.nilable(SourceDefinition))
+        sig { params(block: T.proc.returns(::ActiveRecord::Relation)).void }
+        def materialized_from(&block)
+          @source_definition = T.let(block, T.nilable(SourceDefinition))
           Registry.register(self) unless abstract_class?
         end
 
@@ -79,9 +79,9 @@ module ActiveRecord
           T.unsafe(self).instance_variable_set(:@refresh_mode, mode.to_sym)
         end
 
-        sig { params(sql: T.nilable(SourceDefinition), block: T.nilable(T.proc.returns(String))).void }
-        def incremental_from(sql = nil, &block)
-          @incremental_source_definition = T.let(sql || block, T.nilable(SourceDefinition))
+        sig { params(block: T.proc.returns(::ActiveRecord::Relation)).void }
+        def incremental_from(&block)
+          @incremental_source_definition = T.let(block, T.nilable(SourceDefinition))
         end
 
         sig { params(columns: T.any(Symbol, String)).void }
@@ -147,7 +147,7 @@ module ActiveRecord
           columns.nil? ? [] : columns
         end
 
-        sig { returns(T.any(String, ::ActiveRecord::Relation)) }
+        sig { returns(::ActiveRecord::Relation) }
         def resolved_incremental_source
           unless incremental_source_override?
             raise ArgumentError, "incremental_from override is not configured for #{name || view_key}"
@@ -155,14 +155,8 @@ module ActiveRecord
 
           resolve_source_definition(
             @incremental_source_definition,
-            "incremental_from SQL is required for #{name || view_key}"
+            "incremental_from is required for #{name || view_key}"
           )
-        end
-
-        sig { returns(String) }
-        def resolved_incremental_sql
-          source = resolved_incremental_source
-          source.is_a?(::ActiveRecord::Relation) ? source.to_sql : source
         end
 
         sig { returns(Symbol) }
@@ -196,18 +190,12 @@ module ActiveRecord
           setting
         end
 
-        sig { returns(T.any(String, ::ActiveRecord::Relation)) }
+        sig { returns(::ActiveRecord::Relation) }
         def resolved_source
           resolve_source_definition(
             @source_definition,
             "materialized_from is required for #{name || view_key}"
           )
-        end
-
-        sig { returns(String) }
-        def resolved_source_sql
-          source = resolved_source
-          source.is_a?(::ActiveRecord::Relation) ? source.to_sql : source
         end
 
         sig { returns(Metadata) }
@@ -307,12 +295,14 @@ module ActiveRecord
           params(
             definition: T.nilable(SourceDefinition),
             empty_message: String
-          ).returns(T.any(String, ::ActiveRecord::Relation))
+          ).returns(::ActiveRecord::Relation)
         end
         def resolve_source_definition(definition, empty_message)
           source = coerce_source(definition)
           raise ArgumentError, empty_message if source.nil?
-          raise ArgumentError, empty_message if source.is_a?(String) && source.strip.empty?
+          unless source.is_a?(::ActiveRecord::Relation)
+            raise ArgumentError, "#{empty_message}: expected ActiveRecord::Relation, got #{source.class}"
+          end
 
           source
         end
@@ -322,13 +312,7 @@ module ActiveRecord
           source = definition
           return source unless source.is_a?(Proc)
 
-          T.unsafe(source).lambda? ? source.call : T.unsafe(self).instance_eval(&source)
-        end
-
-        sig { params(definition: T.nilable(SourceDefinition), empty_message: String).returns(String) }
-        def resolve_sql_definition(definition, empty_message)
-          source = resolve_source_definition(definition, empty_message)
-          source.is_a?(::ActiveRecord::Relation) ? source.to_sql : source
+          source.call
         end
 
         sig { void }

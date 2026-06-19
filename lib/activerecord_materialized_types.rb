@@ -6,10 +6,9 @@ module ActiveRecordMaterializedTypes
   StalenessDuration = T.type_alias { T.any(Integer, ::ActiveSupport::Duration) }
   SourceDefinition = T.type_alias do
     T.any(
-      String,
       ::ActiveRecord::Relation,
       Proc,
-      T.nilable(T.proc.returns(T.any(String, ::ActiveRecord::Relation)))
+      T.nilable(T.proc.returns(::ActiveRecord::Relation))
     )
   end
   RefreshMode = T.type_alias { Symbol }

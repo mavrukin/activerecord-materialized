@@ -10,7 +10,7 @@ RSpec.describe ActiveRecord::Materialized::Registry do
   it "registers materialized view subclasses" do
     view_class = Class.new(ActiveRecord::Materialized::View) do
       self.table_name = "mv_registry_test"
-      materialized_from "SELECT 1 AS id"
+      materialized_from { ViewSources.item_id_sample }
     end
 
     expect(described_class.all).to include(view_class)
@@ -22,14 +22,20 @@ RSpec.describe ActiveRecord::Materialized::Registry do
 
     Class.new(ActiveRecord::Materialized::View) do
       self.table_name = "mv_refresh_all_a"
-      materialized_from "SELECT 1 AS value"
-      define_singleton_method(:refresh!) { |**_| refreshed << name; nil }
+      materialized_from { ViewSources.item_id_sample }
+      define_singleton_method(:refresh!) do |**_|
+        refreshed << name
+        nil
+      end
     end
 
     Class.new(ActiveRecord::Materialized::View) do
       self.table_name = "mv_refresh_all_b"
-      materialized_from "SELECT 2 AS value"
-      define_singleton_method(:refresh!) { |**_| refreshed << name; nil }
+      materialized_from { ViewSources.item_amount_sample }
+      define_singleton_method(:refresh!) do |**_|
+        refreshed << name
+        nil
+      end
     end
 
     described_class.refresh_all!

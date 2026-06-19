@@ -18,11 +18,7 @@ RSpec.describe "materialized view integration" do
     Class.new(ActiveRecord::Materialized::View) do
       self.table_name = "mv_revenue_by_category"
 
-      materialized_from lambda {
-        Item.group(:category)
-            .select("category, SUM(amount) AS revenue, AVG(amount) AS average_amount")
-            .having("SUM(amount) > 5")
-      }
+      materialized_from { ViewSources.revenue_by_category }
 
       depends_on :items
       max_staleness 6.hours
@@ -37,6 +33,7 @@ RSpec.describe "materialized view integration" do
 
   it "supports complex aggregation workflows end-to-end" do
     RefreshAndQueryIntegrationHelpers.seed_items!
+
     result = view_class.refresh!
     expect(result.row_count).to eq(3)
     expect(view_class.order(:category).pluck(:category, :revenue)).to eq(
@@ -48,8 +45,8 @@ RSpec.describe "materialized view integration" do
     )
     expect(view_class.last_refresh_note).to eq("completed")
 
-    # Simulate read-heavy access pattern
-    100.times { view_class.where("revenue > ?", 25).to_a }
+    revenue = view_class.arel_table[:revenue]
+    100.times { view_class.where(revenue.gt(25)).to_a }
     expect(view_class.stale?).to be(false)
   end
 end

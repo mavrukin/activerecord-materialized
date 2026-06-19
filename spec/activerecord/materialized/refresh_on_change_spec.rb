@@ -8,7 +8,7 @@ RSpec.describe "refresh on dependency change" do
   let(:view_class) do
     Class.new(ActiveRecord::Materialized::View) do
       self.table_name = "mv_refresh_on_change_items"
-      materialized_from -> { Item.group(:category).select("category, COUNT(*) AS item_count") }
+      materialized_from { ViewSources.item_count_by_category }
       depends_on Item
       refresh_on_change :async
       refresh_debounce 0

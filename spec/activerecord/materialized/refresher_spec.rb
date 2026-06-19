@@ -7,9 +7,7 @@ RSpec.describe ActiveRecord::Materialized::Refresher do
     Class.new(ActiveRecord::Materialized::View) do
       self.table_name = "mv_sales_summary"
 
-      materialized_from lambda {
-        Item.group(:category).select("category, SUM(amount) AS total_amount, COUNT(*) AS row_count")
-      }
+      materialized_from { ViewSources.sales_by_category }
     end
   end
 
@@ -64,7 +62,7 @@ RSpec.describe ActiveRecord::Materialized::Refresher do
         Class.new(ActiveRecord::Materialized::View) do
           self.table_name = "mv_default_incremental"
 
-          materialized_from -> { Item.group(:category).select("category, SUM(amount) AS total_amount") }
+          materialized_from { ViewSources.sales_by_category_with_totals }
         end
       end
 
@@ -92,7 +90,7 @@ RSpec.describe ActiveRecord::Materialized::Refresher do
         allow(connection).to receive(:execute).and_call_original
         described_class.new(view_class).refresh!
 
-        expect(connection).not_to have_received(:execute).with(/ALTER TABLE .* RENAME TO/)
+        expect(connection).not_to have_received(:execute)
         expect(view_class.find_by(category: "books").total_amount).to eq(15)
         expect(view_class.find_by(category: "games").total_amount).to eq(20)
       end
