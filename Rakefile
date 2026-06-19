@@ -5,6 +5,9 @@ require "activerecord/materialized"
 
 Bundler::GemHelper.install_tasks
 
+# Standalone gem Rakefile — no Rails app to boot. Benchmark scripts load their own deps.
+task :environment
+
 desc "Run benchmark comparing raw vs materialized queries"
 task benchmark: :environment do
   load File.expand_path("benchmark/compare.rb", __dir__)
