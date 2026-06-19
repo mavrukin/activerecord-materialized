@@ -101,7 +101,8 @@ module ActiveRecord
           dirty: false,
           row_count: row_count,
           refresh_duration_ms: duration_ms,
-          last_error: nil
+          last_error: nil,
+          maintenance_payload: nil
         )
       end
 

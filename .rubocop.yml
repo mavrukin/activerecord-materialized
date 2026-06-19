@@ -115,6 +115,7 @@ RSpec/SpecFilePathFormat:
     - "spec/activerecord/materialized/incremental_maintainer_spec.rb"
     - "spec/activerecord/materialized/change_key_extractor_spec.rb"
     - "spec/activerecord/materialized/view_definition_spec.rb"
+    - "spec/activerecord/materialized/maintenance_delta_spec.rb"
     - "spec/activerecord/materialized/refresher_spec.rb"
 
 RSpec/HookArgument:
@@ -131,3 +132,13 @@ RSpec/MultipleExpectations:
 
 RSpec/ExampleLength:
   Max: 15
+  Exclude:
+    - "spec/integration/benchmark_update_verification_spec.rb"
+
+RSpec/BeforeAfterAll:
+  Exclude:
+    - "spec/integration/benchmark_update_verification_spec.rb"
+
+RSpec/InstanceVariable:
+  Exclude:
+    - "spec/integration/benchmark_update_verification_spec.rb"

@@ -38,8 +38,8 @@ module ActiveRecord
 
       sig { params(other: MaintenanceDelta).returns(MaintenanceDelta) }
       def merge(other)
-        return self if other.full_partition?
-        return other if full_partition?
+        return other if other.full_partition?
+        return self if full_partition?
 
         combined = (key_tuples + other.key_tuples).uniq
         self.class.scoped(combined)

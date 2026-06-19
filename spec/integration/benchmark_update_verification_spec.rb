@@ -25,6 +25,11 @@ RSpec.describe "benchmark update verification", :benchmark do
 
   let(:view_class) { GenderPairingStatsView }
 
+  before do
+    ActiveRecord::Materialized::AsyncRefresher.reset!
+    view_class.metadata.clear_maintenance_payload!
+  end
+
   it "refreshes in the background after dependency writes so reads stay fast" do
     baseline = view_class.where(gender: "f").pick(:role_pairings).to_i
 
