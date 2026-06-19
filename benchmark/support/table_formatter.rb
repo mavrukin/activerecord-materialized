@@ -8,7 +8,7 @@ module BenchmarkSupport
       query: "Query",
       raw: "Raw (s)",
       mv_read: "MV read (s)",
-      refresh: "Refresh(ms)",
+      refresh: "Bootstrap(ms)",
       speedup: "Speedup"
     }.freeze
 
@@ -18,7 +18,7 @@ module BenchmarkSupport
       query: "Query",
       raw: "Raw (s)",
       mv_read: "MV read (s)",
-      refresh: "Refresh(ms)",
+      refresh: "Bootstrap(ms)",
       speedup: "Speedup",
       check: "Check"
     }.freeze

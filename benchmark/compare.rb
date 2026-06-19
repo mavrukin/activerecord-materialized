@@ -36,7 +36,7 @@ puts "=" * 72
 results = QUERIES.map do |query|
   source_relation = query[:materialized].resolved_source
 
-  print "Refreshing materialized view for #{query[:name]}..."
+  print "Bootstrap refresh (one-time) for #{query[:name]}..."
   refresh_result = query[:materialized].refresh!
   puts " #{refresh_result.row_count} rows in #{refresh_result.duration_ms}ms"
 
@@ -69,5 +69,6 @@ results.each do |row|
 end
 
 puts
-puts "Materialized views trade upfront refresh cost for dramatically faster reads."
-puts "With infrequent base-table updates, this matches native materialized view semantics."
+puts "Bootstrap refresh is a one-time full materialization cost per view."
+puts "For write → incremental maintenance → updated read timing, run: rake benchmark:verify_updates"
+puts "Materialized views trade bootstrap cost for dramatically faster reads."
