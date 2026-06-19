@@ -6,6 +6,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `activerecord-materialized` is a Ruby gem providing **application-level materialized views** for Rails/ActiveRecord on databases without native MV support (MySQL, MariaDB, SQLite). It precomputes expensive analytical queries into cache tables, refreshes them in the background when dependency data changes (refresh-on-write, not refresh-on-read), and serves reads through a transparent ActiveRecord API. It is a standalone gem — there is no host Rails app in this repo. Ruby >= 3.4, Rails/ActiveRecord >= 8.0.
 
+## Workflow
+
+Follow this end-to-end flow for any non-trivial unit of work:
+
+1. **Open a GitHub issue** describing the work. Populate it well — context/motivation, scope, and acceptance criteria — not a one-liner.
+2. **Branch** off `main` with a name that includes the issue number plus a short description (e.g. `17-speed-up-lefthook-scoped-checks`).
+3. **Implement.** Always add good tests. Reduce duplication, and clean things up opportunistically as you touch surrounding code.
+4. **Commit and push**, then **verify CI passes** (`.github/workflows/ci.yml`). Improve the CI itself when it's warranted.
+5. **Open a descriptive, high-standard PR** and **stop for the user to review** — do not merge.
+
+## Quality bar
+
+Aim for code that reads as an **exemplar of idiomatic Ruby/Rails**:
+
+- Relentlessly reduce duplication; factor shared logic rather than copy-paste.
+- Lean on existing libraries, gem dependencies, and **built-in Ruby/Rails/ActiveRecord patterns** before writing bespoke code. Reuse what's already in the codebase.
+- Prefer expressive, idiomatic constructs (Enumerable methods, ActiveSupport helpers, Arel) over hand-rolled equivalents.
+- The standard is exceptional: a reader should consider the result a model of what high-quality Ruby/Rails code looks like.
+
 ## Commands
 
 ```bash
