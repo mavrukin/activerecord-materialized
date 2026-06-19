@@ -10,12 +10,6 @@ module ActiveRecord
         require_relative "tasks"
         Tasks.define!
       end
-
-      initializer "activerecord_materialized.install" do
-        ::ActiveSupport.on_load(:active_record) do
-          InstallHooks.install!
-        end
-      end
     end
   end
 end

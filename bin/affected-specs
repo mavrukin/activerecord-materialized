@@ -13,7 +13,6 @@ SPEC_OVERRIDES = {
   "refresh_job" => %w[view_refresh_on_change_spec.rb],
   "relation_cache_writer" => %w[refresher_spec.rb incremental_maintainer_spec.rb],
   "cache_table_schema" => %w[refresher_spec.rb],
-  "install_hooks" => :all,
   "dependency_registry" => :all,
   "dependency_trackable" => :all,
   "table_model_registry" => :all,
