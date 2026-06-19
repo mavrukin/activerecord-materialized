@@ -17,6 +17,9 @@ module ActiveRecord
         @dependency_tables = T.let(nil, T.nilable(T::Array[String]))
         @refresh_strategy = T.let(nil, T.nilable(Symbol))
         @refresh_debounce = T.let(nil, T.nilable(DebounceInterval))
+        @refresh_mode = T.let(nil, T.nilable(RefreshMode))
+        @incremental_source_definition = T.let(nil, T.nilable(SourceDefinition))
+        @incremental_key_columns = T.let(nil, T.nilable(T::Array[String]))
         @table_name = T.let(nil, T.nilable(String))
 
         sig { returns(T.nilable(SourceDefinition)) }
@@ -37,6 +40,9 @@ module ActiveRecord
           T.unsafe(subclass).instance_variable_set(:@dependency_tables, [])
           T.unsafe(subclass).instance_variable_set(:@refresh_strategy, nil)
           T.unsafe(subclass).instance_variable_set(:@refresh_debounce, nil)
+          T.unsafe(subclass).instance_variable_set(:@refresh_mode, nil)
+          T.unsafe(subclass).instance_variable_set(:@incremental_source_definition, nil)
+          T.unsafe(subclass).instance_variable_set(:@incremental_key_columns, nil)
         end
 
         sig { returns(String) }
@@ -66,6 +72,57 @@ module ActiveRecord
         sig { params(seconds: DebounceInterval).void }
         def refresh_debounce(seconds)
           @refresh_debounce = T.let(seconds, T.nilable(DebounceInterval))
+        end
+
+        sig { params(mode: RefreshMode).void }
+        def refresh_mode(mode)
+          T.unsafe(self).instance_variable_set(:@refresh_mode, mode.to_sym)
+        end
+
+        sig { params(sql: T.nilable(SourceDefinition), block: T.nilable(T.proc.returns(String))).void }
+        def incremental_from(sql = nil, &block)
+          @incremental_source_definition = T.let(sql || block, T.nilable(SourceDefinition))
+        end
+
+        sig { params(columns: T.any(Symbol, String)).void }
+        def incremental_keys(*columns)
+          @incremental_key_columns = T.let(columns.map(&:to_s), T.nilable(T::Array[String]))
+        end
+
+        sig { returns(RefreshMode) }
+        def resolved_refresh_mode
+          mode = T.let(
+            T.unsafe(self).instance_variable_get(:@refresh_mode),
+            T.nilable(RefreshMode)
+          )
+          mode || :full
+        end
+
+        sig { returns(T::Array[String]) }
+        def incremental_key_columns
+          columns = T.let(
+            T.unsafe(self).instance_variable_get(:@incremental_key_columns),
+            T.nilable(T::Array[String])
+          )
+          columns.nil? ? [] : columns
+        end
+
+        sig { returns(T::Boolean) }
+        def incremental_refresh_configured?
+          incremental_key_columns.any? && !@incremental_source_definition.nil?
+        end
+
+        sig { returns(String) }
+        def resolved_incremental_sql
+          unless incremental_refresh_configured?
+            raise ArgumentError,
+                  "incremental_from and incremental_keys are required for incremental refresh on #{name || view_key}"
+          end
+
+          resolve_sql_definition(
+            @incremental_source_definition,
+            "incremental_from SQL is required for #{name || view_key}"
+          )
         end
 
         sig { returns(Symbol) }
@@ -101,17 +158,10 @@ module ActiveRecord
 
         sig { returns(String) }
         def resolved_source_sql
-          sql = @source_definition
-          if sql.is_a?(Proc)
-            sql = T.unsafe(sql).lambda? ? sql.call : T.unsafe(self).instance_eval(&sql)
-          end
-          sql = sql.call if sql.respond_to?(:call) && !sql.is_a?(String)
-          if sql.nil? || sql.strip.empty?
-            raise ArgumentError,
-                  "materialized_from SQL is required for #{name || view_key}"
-          end
-
-          sql
+          resolve_sql_definition(
+            @source_definition,
+            "materialized_from SQL is required for #{name || view_key}"
+          )
         end
 
         sig { returns(Metadata) }
@@ -206,6 +256,18 @@ module ActiveRecord
         end
 
         private
+
+        sig { params(definition: T.nilable(SourceDefinition), empty_message: String).returns(String) }
+        def resolve_sql_definition(definition, empty_message)
+          sql = definition
+          if sql.is_a?(Proc)
+            sql = T.unsafe(sql).lambda? ? sql.call : T.unsafe(self).instance_eval(&sql)
+          end
+          sql = sql.call if sql.respond_to?(:call) && !sql.is_a?(String)
+          raise ArgumentError, empty_message if sql.nil? || sql.strip.empty?
+
+          sql
+        end
 
         sig { void }
         def ensure_materialized!

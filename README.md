@@ -121,7 +121,7 @@ This gem applies decades of materialized view research to the application layer:
 | **Production reference** | [PostgreSQL: REFRESH MATERIALIZED VIEW](https://www.postgresql.org/docs/current/sql-refreshmaterializedview.html) — CONCURRENTLY refresh, separate read/refresh paths |
 | **Benchmark schema** | Leis et al., [*How Good Are Query Optimizers, Really?*](https://dl.acm.org/doi/10.1145/3035918.3064035) (VLDB 2015) — [Join Order Benchmark](https://github.com/gregrahn/join-order-benchmark) used in this repo's benchmark suite |
 
-**Design choice:** v0.1 uses **full refresh** (rebuild entire cache table) with **atomic swap**, matching PostgreSQL's non-concurrent refresh semantics. Incremental view maintenance (IVM) — updating only changed rows — is a planned future enhancement for views where full rebuild cost dominates.
+**Design choice:** The default path uses **full refresh** (rebuild entire cache table) with **atomic swap**, matching PostgreSQL's non-concurrent refresh semantics. For large views with frequent small writes, opt in to **incremental refresh** via `refresh_mode :incremental` and `incremental_from` when you can express a delta query. Automatic incremental view maintenance (IVM) remains future work.
 
 ---
 
@@ -130,7 +130,8 @@ This gem applies decades of materialized view research to the application layer:
 - **Refresh on write** — dependency changes schedule background refresh; reads never block on rebuild
 - **Transparent ActiveRecord API** — `where`, `find`, `count`, scopes, associations on cache tables
 - **Declarative source SQL** — `materialized_from` with string or callable
-- **Atomic table swap** — `CREATE TABLE AS` + rename; minimal read downtime during refresh
+- **Atomic table swap** — `CREATE TABLE AS` + rename; minimal read downtime during full refresh
+- **Opt-in incremental refresh** — `refresh_mode :incremental` merges delta rows by key
 - **Debounced async refresh** — coalesce rapid writes (PostgreSQL NOTIFY + worker pattern)
 - **ActiveJob integration** — offload refresh to Sidekiq, GoodJob, Solid Queue, etc.
 - **Dependency tracking** — `depends_on` tables; detects both AR and raw SQL writes
@@ -224,6 +225,27 @@ Refresh strategies:
 | `:immediate` | Synchronous refresh on each write (blocks writers) |
 | `:manual` | Mark dirty only; call `refresh!` or rake tasks explicitly |
 
+Incremental refresh (opt-in):
+
+```ruby
+class SalesSummary < ActiveRecord::Materialized::View
+  # ... materialized_from, depends_on ...
+
+  refresh_mode :incremental
+  incremental_keys :category
+  incremental_from <<~SQL
+    SELECT products.category, SUM(line_items.amount) AS revenue, COUNT(DISTINCT orders.id) AS order_count
+    FROM line_items
+    INNER JOIN orders ON orders.id = line_items.order_id
+    INNER JOIN products ON products.id = line_items.product_id
+    WHERE products.category IN (:changed_categories)
+    GROUP BY products.category
+  SQL
+end
+```
+
+The first refresh always performs a full rebuild. Subsequent refreshes merge rows returned by `incremental_from` into the cache table using `incremental_keys`. You supply the delta query — the gem does not infer it from `depends_on`.
+
 ---
 
 ## Configuration
@@ -264,6 +286,9 @@ end
 | `depends_on(*tables)` | Register dependency tables; writes trigger refresh |
 | `refresh_on_change(strategy)` | `:async`, `:immediate`, or `:manual` |
 | `refresh_debounce(duration)` | Coalesce rapid writes before refreshing |
+| `refresh_mode(mode)` | `:full` (default) or `:incremental` |
+| `incremental_from(sql, &block)` | Delta query for incremental refresh |
+| `incremental_keys(*columns)` | Key columns used to merge delta rows |
 | `max_staleness(duration)` | Optional time-based safety refresh via rake/cron |
 | `before_refresh` / `after_refresh` | Refresh lifecycle callbacks |
 
@@ -326,7 +351,7 @@ See [benchmark/DATA.md](benchmark/DATA.md) for dataset scales and setup details.
 | Transparent reads | ✅ (query rewrite or direct) | ✅ (ActiveRecord model) |
 | Refresh on dependency change | Manual / trigger / pg_cron | ✅ automatic via `depends_on` |
 | Background refresh | `REFRESH ... CONCURRENTLY` | ✅ async / ActiveJob |
-| Incremental refresh | Limited (IVM extensions) | ❌ full refresh only (v0.1) |
+| Incremental refresh | Limited (IVM extensions) | ✅ opt-in via `incremental_from` |
 | Atomic swap during refresh | ✅ CONCURRENTLY | ✅ table rename |
 | Database portability | PostgreSQL only | ✅ any ActiveRecord adapter |
 

@@ -55,11 +55,20 @@ module ActiveRecord
         source_sql = view_class.resolved_source_sql
         table_name = view_class.table_name
 
-        if ::ActiveRecord::Materialized.atomic_swap_refresh?
+        if incremental_refresh?(connection, table_name)
+          IncrementalRefresher.new(view_class).refresh!(connection, table_name)
+        elsif ::ActiveRecord::Materialized.atomic_swap_refresh?
           refresh_with_atomic_swap!(connection, table_name, source_sql)
         else
           refresh_with_truncate_insert!(connection, table_name, source_sql)
         end
+      end
+
+      sig { params(connection: Connection, table_name: String).returns(T::Boolean) }
+      def incremental_refresh?(connection, table_name)
+        view_class.resolved_refresh_mode == :incremental &&
+          table_exists?(connection, table_name) &&
+          view_class.incremental_refresh_configured?
       end
 
       sig { params(connection: Connection, table_name: String, source_sql: String).returns(Integer) }

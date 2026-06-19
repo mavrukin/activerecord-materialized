@@ -14,6 +14,7 @@ Initial release.
 - Refresh strategies: `:async` (default), `:immediate`, `:manual`
 - Debounced async refresh with in-process `AsyncRefresher` or ActiveJob dispatcher
 - Atomic table-swap refresh (`CREATE TABLE AS` + rename)
+- Opt-in incremental refresh via `refresh_mode :incremental`, `incremental_from`, and `incremental_keys`
 - Metadata tracking (`dirty`, `last_refreshed_at`, `row_count`, `refresh_duration_ms`, errors)
 - Optional `max_staleness` time-based safety net
 - `before_refresh` / `after_refresh` callbacks

@@ -10,11 +10,13 @@ $LOAD_PATH.unshift File.join(ROOT, "lib")
 
 require "active_support/time"
 
-Time.zone = "UTC"
-
 require "activerecord-materialized"
 
 RSpec.configure do |config|
+  config.around do |example|
+    Time.use_zone("UTC") { example.run }
+  end
+
   config.expect_with :rspec do |expectations|
     expectations.include_chain_clauses_in_custom_matcher_descriptions = true
   end
@@ -40,6 +42,7 @@ RSpec.configure do |config|
   end
 
   config.before(:each) do
+    ActiveRecord::Materialized::AsyncRefresher.reset!
     unless RSpec.current_example.metadata[:benchmark]
       ActiveRecord::Base.establish_connection(adapter: "sqlite3", database: ":memory:")
       ActiveRecord::Base.connection.create_table :items, force: true do |t|

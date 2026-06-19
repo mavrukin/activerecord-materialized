@@ -108,6 +108,8 @@ Style/ArgumentsForwarding:
 RSpec/SpecFilePathFormat:
   Exclude:
     - "spec/activerecord/materialized/view_spec.rb"
+    - "spec/activerecord/materialized/incremental_refresher_spec.rb"
+    - "spec/activerecord/materialized/refresher_spec.rb"
 
 RSpec/HookArgument:
   Enabled: false
