@@ -70,9 +70,9 @@ bundle exec rake benchmark:verify_updates
 The script:
 
 1. **Bootstraps** the cache table once if missing (`CREATE TABLE AS` + atomic swap)
-2. **Inserts** rows into `cast_info`, accumulating maintenance scope from write SQL
+2. **Inserts** rows into `cast_info` with refresh held manual so partition scope accumulates without an immediate background refresh
 3. Confirms **stale reads** stay sub-millisecond and return the pre-update snapshot
-4. Runs `AsyncRefresher.flush!` to perform **incremental maintenance** (in-place partition merge — no cache-table rebuild)
+4. Runs an explicit `view.refresh!` to perform **incremental maintenance** (in-place partition merge — no cache-table rebuild)
 5. Validates **updated reads** match the raw query and remain fast
 
 Adjust insert volume with `UPDATE_INSERT_COUNT=8000`.

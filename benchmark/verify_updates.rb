@@ -81,6 +81,9 @@ puts "   female role_pairings=#{baseline}"
 mv_read_before_avg, = BenchmarkSupport.timed(iterations: 5) { female_pairing_total(view) }
 puts "2) Cached MV reads (pre-update): #{(mv_read_before_avg * 1000).round(2)}ms avg"
 
+# Hold refresh until we have measured stale reads; debounce 0 would otherwise
+# complete maintenance in a background thread before those assertions run.
+view.refresh_on_change :manual
 inserted = insert_synthetic_cast_rows!(count: Integer(ENV.fetch("UPDATE_INSERT_COUNT", "8000")))
 puts "3) Inserted #{inserted} cast_info rows (partition scope accumulated on commit)"
 
