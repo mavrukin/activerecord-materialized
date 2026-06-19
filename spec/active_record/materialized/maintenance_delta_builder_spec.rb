@@ -30,4 +30,29 @@ RSpec.describe ActiveRecord::Materialized::MaintenanceDeltaBuilder do
 
     expect(delta.full_partition?).to be(true)
   end
+
+  it "preserves falsey group-key values instead of widening" do
+    change = ActiveRecord::Materialized::WriteChange.new(
+      table_name: "items",
+      operation: :create,
+      attributes: { "active" => false },
+      previous_attributes: {}
+    )
+    delta = described_class.new(change, ["active"]).build
+
+    expect(delta.full_partition?).to be(false)
+    expect(delta.key_tuples).to eq([[false]])
+  end
+
+  it "extracts both old and new partitions when a group key changes" do
+    change = ActiveRecord::Materialized::WriteChange.new(
+      table_name: "items",
+      operation: :update,
+      attributes: { "category" => "games" },
+      previous_attributes: { "category" => "books" }
+    )
+    delta = described_class.new(change, ["category"]).build
+
+    expect(delta.key_tuples).to contain_exactly(["games"], ["books"])
+  end
 end
