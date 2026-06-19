@@ -96,7 +96,7 @@ module ActiveRecord
       def mark_refreshed!(row_count:, duration_ms:)
         ensure_table!
         record.update!(
-          last_refreshed_at: ::Time.zone.now,
+          last_refreshed_at: current_timestamp,
           refreshing: false,
           dirty: false,
           row_count: row_count,
@@ -116,6 +116,12 @@ module ActiveRecord
       end
 
       private
+
+      sig { returns(Timestamp) }
+      def current_timestamp
+        zone = ::Time.zone
+        zone ? zone.now : ::Time.now.utc
+      end
 
       sig { params(staleness: StalenessDuration).returns(Timestamp) }
       def duration_threshold(staleness)

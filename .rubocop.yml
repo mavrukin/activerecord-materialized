@@ -117,6 +117,7 @@ RSpec/SpecFilePathFormat:
     - "spec/activerecord/materialized/change_key_extractor_spec.rb"
     - "spec/activerecord/materialized/view_definition_spec.rb"
     - "spec/activerecord/materialized/maintenance_delta_spec.rb"
+    - "spec/activerecord/materialized/metadata_spec.rb"
     - "spec/activerecord/materialized/refresher_spec.rb"
 
 RSpec/HookArgument:
