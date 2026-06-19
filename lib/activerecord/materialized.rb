@@ -40,14 +40,7 @@ require_relative "materialized/relation_cache_writer"
 require_relative "materialized/maintenance_store"
 require_relative "materialized/incremental_maintainer"
 require_relative "materialized/metadata"
-require_relative "materialized/install_hooks"
 
 require_relative "materialized/refresh_job" if defined?(ActiveJob::Base)
-
-ActiveSupport.on_load(:active_record) do
-  ActiveRecord::Materialized::InstallHooks.install!
-end
-
-ActiveRecord::Materialized::InstallHooks.install! if defined?(ActiveRecord::Base)
 
 require_relative "activerecord/materialized/railtie" if defined?(Rails::Railtie)

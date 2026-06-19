@@ -43,7 +43,6 @@ RSpec.configure do |config|
     ActiveRecord::Materialized::TableModelRegistry.register(Item)
     ActiveRecord::Materialized::Registry.send(:reset!)
     ActiveRecord::Materialized::DependencyRegistry.reset!
-    ActiveRecord::Materialized::InstallHooks.install!
   end
 
   config.before(:each) do

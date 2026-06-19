@@ -59,12 +59,12 @@ flowchart TB
     subgraph writes ["Write path — routine maintenance"]
         W["INSERT / UPDATE / DELETE on depends_on model"]
         DT["DependencyTrackable after_*_commit callbacks"]
-        TR["TransactionRefreshRecorder after_commit callback"]
+        DR["DependencyRegistry.publish_write_change!"]
         MS["MaintenanceDeltaBuilder + MaintenanceStore"]
         RS[RefreshScheduler]
         AR["AsyncRefresher or ActiveJob"]
         IM["IncrementalMaintainer in-place partition merge"]
-        W --> DT --> TR --> MS --> RS --> AR --> IM
+        W --> DT --> DR --> MS --> RS --> AR --> IM
     end
 
     subgraph bootstrap ["Bootstrap once"]
@@ -94,9 +94,9 @@ flowchart TB
 
 1. **Define** a view class with a `materialized_from` block (returning an `ActiveRecord::Relation`) and `depends_on` models.
 2. **Bootstrap** — first read (or explicit `refresh!`) materializes the source relation into the cache table via `RelationCacheWriter` + atomic swap when the cache table is missing.
-3. **Write** — any create/update/destroy on a `depends_on` model is detected via ActiveRecord commit callbacks.
-4. **Accumulate** — `MaintenanceDeltaBuilder` records affected `GROUP BY` partition keys in `MaintenanceStore` (widens to all partitions when scope is unknown).
-5. **Defer** — changes inside a transaction are batched; maintenance is scheduled on `after_commit`.
+3. **Write** — any create/update/destroy on a `depends_on` model fires an `after_*_commit` callback (installed by `DependencyTrackable`) that calls `DependencyRegistry.publish_write_change!`.
+4. **Accumulate** — for each affected view, `MaintenanceDeltaBuilder` records affected `GROUP BY` partition keys in `MaintenanceStore` (widens to all partitions when scope is unknown).
+5. **Defer** — `after_*_commit` fires only once the writing transaction commits, so changes are batched naturally and a rolled-back transaction schedules nothing.
 6. **Debounce** — rapid writes coalesce into one maintenance pass (configurable window).
 7. **Maintain** — `IncrementalMaintainer` deletes and re-aggregates only affected partitions in the existing cache table (no DDL, no atomic swap on the hot path).
 8. **Read** — `where`, `find`, `count`, scopes query the cache table directly; reads before maintenance completes return the previous snapshot, reads after see updated partitions.
@@ -107,8 +107,7 @@ flowchart TB
 |-----------|------|
 | `ActiveRecord::Materialized::View` | Base model; DSL and query interface |
 | `DependencyTrackable` | Installs `after_*_commit` callbacks on `depends_on` models |
-| `DependencyRegistry` | Maps tables → view classes |
-| `TransactionRefreshRecorder` | Registers `after_commit` / `after_rollback` on the current transaction |
+| `DependencyRegistry` | Maps tables → view classes; publishes commit writes to affected views |
 | `RefreshScheduler` | Dispatches `:async`, `:immediate`, or `:manual` strategies |
 | `AsyncRefresher` | Debounced in-process background maintenance (tests: `flush!`) |
 | `RefreshJob` | Optional ActiveJob wrapper for production workers |

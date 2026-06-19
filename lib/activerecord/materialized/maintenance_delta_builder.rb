@@ -54,7 +54,11 @@ module ActiveRecord
 
       sig { params(attributes: T::Hash[String, T.untyped], column: String).returns(T.untyped) }
       def attribute_value(attributes, column)
-        attributes[column] || T.unsafe(attributes)[column.to_sym]
+        # Look up by presence rather than truthiness so falsey group-key
+        # values (e.g. `false`, `nil`) map to the correct partition.
+        return attributes[column] if attributes.key?(column)
+
+        T.unsafe(attributes)[column.to_sym]
       end
     end
   end

@@ -28,11 +28,6 @@ module ActiveRecord
         @group_key_columns ||= resolve_group_key_columns
       end
 
-      sig { params(key_tuples: T::Array[T::Array[T.untyped]]).returns(::ActiveRecord::Relation) }
-      def scoped_source(key_tuples)
-        partition_scope(key_tuples)
-      end
-
       sig do
         params(
           model: T.class_of(::ActiveRecord::Base),
@@ -47,18 +42,13 @@ module ActiveRecord
       sig { params(key_tuples: T::Array[T::Array[T.untyped]]).returns(::ActiveRecord::Relation) }
       def partition_scope(key_tuples)
         validate_partition_keys!(key_tuples)
-        build_partition_scope(relation, key_tuples)
+        build_partition_scope(source, key_tuples)
       end
 
       private
 
       sig { returns(::ActiveRecord::Relation) }
       attr_reader :source
-
-      sig { returns(::ActiveRecord::Relation) }
-      def relation
-        @source
-      end
 
       sig { returns(T::Array[String]) }
       def resolve_group_key_columns
@@ -69,7 +59,7 @@ module ActiveRecord
 
       sig { returns(T::Array[String]) }
       def relation_group_columns
-        relation.group_values.filter_map { |group_value| group_column_name(group_value) }
+        source.group_values.filter_map { |group_value| group_column_name(group_value) }
       end
 
       sig { params(group_value: T.untyped).returns(T.nilable(String)) }

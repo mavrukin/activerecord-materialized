@@ -17,7 +17,7 @@ RSpec.describe ActiveRecord::Materialized::ViewDefinition do
     Item.create!(category: "books", amount: 10)
     Item.create!(category: "games", amount: 20)
 
-    scoped = definition.scoped_source([["books"]])
+    scoped = definition.partition_scope([["books"]])
     expect(scoped.map { |row| row.attributes["category"] }).to eq(["books"])
   end
 end
