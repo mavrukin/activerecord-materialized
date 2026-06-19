@@ -18,6 +18,9 @@ module ActiveRecord
         @view_class = view_class
       end
 
+      # Single entry point for the metadata row. Every accessor and mutator
+      # below funnels through here, so the metadata table (and its columns)
+      # are ensured exactly once per operation.
       sig { returns(MetadataRecord) }
       def record
         Schema.ensure_table!(view_class)
@@ -46,7 +49,6 @@ module ActiveRecord
 
       sig { returns(T::Boolean) }
       def dirty?
-        Schema.ensure_table!(view_class)
         !!record.dirty?
       end
 
@@ -62,31 +64,26 @@ module ActiveRecord
 
       sig { void }
       def mark_dirty!
-        Schema.ensure_table!(view_class)
         record.update!(dirty: true)
       end
 
       sig { params(payload: T::Hash[String, T.untyped]).void }
       def record_maintenance_payload!(payload)
-        Schema.ensure_table!(view_class)
         MaintenancePayload.record!(self, payload)
       end
 
       sig { returns(T.nilable(T::Hash[String, T.untyped])) }
       def maintenance_payload
-        Schema.ensure_table!(view_class)
         MaintenancePayload.fetch(self)
       end
 
       sig { void }
       def clear_maintenance_payload!
-        Schema.ensure_table!(view_class)
         MaintenancePayload.clear!(self)
       end
 
       sig { void }
       def mark_refreshing!
-        Schema.ensure_table!(view_class)
         record.update!(
           refreshing: true,
           last_error: nil
@@ -95,7 +92,6 @@ module ActiveRecord
 
       sig { params(row_count: Integer, duration_ms: Integer).void }
       def mark_refreshed!(row_count:, duration_ms:)
-        Schema.ensure_table!(view_class)
         record.update!(
           last_refreshed_at: Timestamps.current,
           refreshing: false,
@@ -109,7 +105,6 @@ module ActiveRecord
 
       sig { params(error: StandardError).void }
       def mark_failed!(error)
-        Schema.ensure_table!(view_class)
         record.update!(
           refreshing: false,
           last_error: error.message
