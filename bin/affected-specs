@@ -1,0 +1,97 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "set"
+
+FAST_SPEC_DIR = "spec/active_record/materialized"
+HEAVY_SPEC = File.join(FAST_SPEC_DIR, "async_refresher_flush_spec.rb")
+ALL_FAST_SPECS = Dir[File.join(FAST_SPEC_DIR, "*_spec.rb")]
+  .reject { |path| path == HEAVY_SPEC }
+  .sort
+  .freeze
+
+# Non-obvious lib file → spec mappings. :all runs the full fast suite.
+SPEC_OVERRIDES = {
+  "async_refresher" => %w[view_refresh_on_change_spec.rb],
+  "refresh_scheduler" => %w[view_refresh_on_change_spec.rb],
+  "refresh_job" => %w[view_refresh_on_change_spec.rb],
+  "relation_cache_writer" => %w[refresher_spec.rb incremental_maintainer_spec.rb],
+  "cache_table_schema" => %w[refresher_spec.rb],
+  "install_hooks" => :all,
+  "dependency_registry" => :all,
+  "dependency_trackable" => :all,
+  "table_model_registry" => :all,
+  "write_change" => %w[maintenance_delta_builder_spec.rb maintenance_delta_spec.rb],
+  "maintenance_store" => %w[maintenance_delta_spec.rb],
+  "query_expressions" => %w[view_definition_spec.rb],
+  "view_configuration_class_methods" => %w[view_spec.rb],
+  "view_incremental_class_methods" => %w[view_spec.rb incremental_maintainer_spec.rb],
+  "view_query_access_class_methods" => %w[view_spec.rb],
+  "view_refresh_policy_class_methods" => %w[view_spec.rb view_refresh_on_change_spec.rb],
+  "refresh_callbacks" => %w[refresher_spec.rb],
+  "refresh_result" => %w[refresher_spec.rb],
+  "metadata_record" => %w[metadata_spec.rb],
+  "configuration" => :all,
+  "railtie" => :all,
+  "module_api" => :all,
+  "type_reexports" => :all,
+  "tasks" => :all,
+  "version" => []
+}.freeze
+
+module AffectedSpecs
+  module_function
+
+  def fast_spec(name)
+    File.join(FAST_SPEC_DIR, name)
+  end
+
+  def specs_for_lib_file(path)
+    return ALL_FAST_SPECS if path == "lib/activerecord/materialized.rb"
+    return ALL_FAST_SPECS if path == "lib/activerecord_materialized_types.rb"
+    return [fast_spec("metadata_spec.rb")] if path.start_with?("lib/activerecord/materialized/metadata/")
+    return [] unless path.start_with?("lib/")
+
+    base = File.basename(path, ".rb")
+    override = SPEC_OVERRIDES[base]
+
+    case override
+    when :all
+      ALL_FAST_SPECS
+    when Array
+      override.map { |name| fast_spec(name) }
+    when nil
+      direct = fast_spec("#{base}_spec.rb")
+      File.exist?(direct) ? [direct] : ALL_FAST_SPECS
+    else
+      []
+    end
+  end
+
+  def specs_for_files(files)
+    specs = Set.new
+    trigger_all = false
+
+    files.each do |file|
+      case file
+      when %r{\A(spec/spec_helper\.rb|spec/support/)}
+        trigger_all = true
+      when %r{_spec\.rb\z}
+        specs << file unless file == HEAVY_SPEC
+      when %r{\Alib/}
+        specs_for_lib_file(file).each { |spec| specs << spec }
+      when %r{\A(Gemfile|activerecord-materialized\.gemspec|\.rubocop|lefthook|sorbet)/},
+           %r{\A\.github/workflows/}
+        trigger_all = true
+      end
+    end
+
+    trigger_all ? ALL_FAST_SPECS : specs.to_a.sort
+  end
+end
+
+if $PROGRAM_NAME == __FILE__
+  files = ARGV
+  specs = files.empty? ? [] : AffectedSpecs.specs_for_files(files)
+  puts specs.join(" ") unless specs.empty?
+end
