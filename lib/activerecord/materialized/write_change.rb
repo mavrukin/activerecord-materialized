@@ -71,10 +71,13 @@ module ActiveRecord
 
       sig { params(record: ::ActiveRecord::Base).returns(WriteChange) }
       def self.from_destroy(record)
+        # `attributes_in_database` is emptied once the row is gone, so read the
+        # in-memory attributes to keep the destroyed row's GROUP BY key values
+        # and let deletes scope to a partition instead of forcing a full rebuild.
         new(
           table_name: record.class.table_name,
           operation: :destroy,
-          attributes: stringify_keys(record.attributes_in_database),
+          attributes: stringify_keys(record.attributes),
           previous_attributes: {}
         )
       end
