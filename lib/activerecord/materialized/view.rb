@@ -95,7 +95,37 @@ module ActiveRecord
             T.unsafe(self).instance_variable_get(:@refresh_mode),
             T.nilable(RefreshMode)
           )
-          mode || :full
+          mode || :incremental
+        end
+
+        sig { returns(ViewDefinition) }
+        def view_definition
+          ViewDefinition.new(resolved_source_sql)
+        end
+
+        sig { returns(T::Array[String]) }
+        def maintenance_key_columns
+          return incremental_key_columns if incremental_key_columns.any?
+
+          view_definition.group_key_columns
+        end
+
+        sig { returns(T::Boolean) }
+        def incrementally_maintainable?
+          resolved_refresh_mode != :full && view_definition.incrementally_maintainable?
+        end
+
+        sig { returns(T::Boolean) }
+        def incremental_source_override?
+          !@incremental_source_definition.nil?
+        end
+
+        sig { params(sql: String).void }
+        def record_write_delta!(sql)
+          return unless incrementally_maintainable?
+
+          delta = ChangeKeyExtractor.new(sql, maintenance_key_columns).extract
+          MaintenanceStore.new(self).merge!(delta)
         end
 
         sig { returns(T::Array[String]) }
@@ -107,16 +137,10 @@ module ActiveRecord
           columns.nil? ? [] : columns
         end
 
-        sig { returns(T::Boolean) }
-        def incremental_refresh_configured?
-          incremental_key_columns.any? && !@incremental_source_definition.nil?
-        end
-
         sig { returns(String) }
         def resolved_incremental_sql
-          unless incremental_refresh_configured?
-            raise ArgumentError,
-                  "incremental_from and incremental_keys are required for incremental refresh on #{name || view_key}"
+          unless incremental_source_override?
+            raise ArgumentError, "incremental_from override is not configured for #{name || view_key}"
           end
 
           resolve_sql_definition(

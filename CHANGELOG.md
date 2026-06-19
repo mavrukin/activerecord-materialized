@@ -13,8 +13,8 @@ Initial release.
 - `depends_on` dependency tracking via `sql.active_record` instrumentation
 - Refresh strategies: `:async` (default), `:immediate`, `:manual`
 - Debounced async refresh with in-process `AsyncRefresher` or ActiveJob dispatcher
-- Atomic table-swap refresh (`CREATE TABLE AS` + rename)
-- Opt-in incremental refresh via `refresh_mode :incremental`, `incremental_from`, and `incremental_keys`
+- Atomic table-swap bootstrap (`CREATE TABLE AS` + rename) when cache table is first created
+- Default incremental maintenance (IVM) for `GROUP BY` views — partition-local delete + re-aggregate, no routine table rebuild
 - Metadata tracking (`dirty`, `last_refreshed_at`, `row_count`, `refresh_duration_ms`, errors)
 - Optional `max_staleness` time-based safety net
 - `before_refresh` / `after_refresh` callbacks

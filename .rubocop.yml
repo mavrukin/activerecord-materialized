@@ -81,6 +81,7 @@ Metrics/ClassLength:
   Exclude:
     - "lib/activerecord/materialized/view.rb"
     - "lib/activerecord/materialized/metadata.rb"
+    - "lib/activerecord/materialized/change_key_extractor.rb"
 
 Metrics/AbcSize:
   Exclude:
@@ -89,6 +90,9 @@ Metrics/AbcSize:
     - "lib/activerecord/materialized/metadata.rb"
     - "lib/activerecord/materialized/change_subscriber.rb"
     - "lib/activerecord/materialized/tasks.rb"
+    - "lib/activerecord/materialized/change_key_extractor.rb"
+    - "lib/activerecord/materialized/incremental_maintainer.rb"
+    - "lib/activerecord/materialized/view_definition.rb"
 
 Lint/HashCompareByIdentity:
   Exclude:
@@ -108,7 +112,9 @@ Style/ArgumentsForwarding:
 RSpec/SpecFilePathFormat:
   Exclude:
     - "spec/activerecord/materialized/view_spec.rb"
-    - "spec/activerecord/materialized/incremental_refresher_spec.rb"
+    - "spec/activerecord/materialized/incremental_maintainer_spec.rb"
+    - "spec/activerecord/materialized/change_key_extractor_spec.rb"
+    - "spec/activerecord/materialized/view_definition_spec.rb"
     - "spec/activerecord/materialized/refresher_spec.rb"
 
 RSpec/HookArgument:
@@ -118,6 +124,7 @@ RSpec/DescribeClass:
   Exclude:
     - "spec/integration/**/*"
     - "spec/activerecord/materialized/refresh_on_change_spec.rb"
+    - "spec/activerecord/materialized/incremental_maintainer_spec.rb"
 
 RSpec/MultipleExpectations:
   Max: 5

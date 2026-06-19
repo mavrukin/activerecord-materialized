@@ -67,9 +67,9 @@ module ActiveRecord
 
           connection = resolve_connection(payload)
           if connection.transaction_open?
-            DependencyRegistry.recorder_for(connection).add_tables(tables)
+            DependencyRegistry.recorder_for(connection).add_tables(tables, sql: sql)
           else
-            DependencyRegistry.schedule_refresh_for_tables!(tables)
+            DependencyRegistry.schedule_refresh_for_tables!(tables, sql: sql)
           end
         end
 
@@ -82,7 +82,7 @@ module ActiveRecord
 
         sig { params(sql: T.nilable(String)).returns(T::Boolean) }
         def refreshing_query?(sql)
-          sql.to_s.match?(/CREATE TABLE .*_refresh_/i) ||
+          sql.to_s.match?(/CREATE TABLE .*_(?:refresh|maint)_/i) ||
             sql.to_s.include?(::ActiveRecord::Materialized.metadata_table_name)
         end
       end

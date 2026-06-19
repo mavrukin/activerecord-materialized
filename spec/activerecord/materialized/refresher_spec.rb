@@ -54,29 +54,21 @@ RSpec.describe ActiveRecord::Materialized::Refresher do
     it "updates results when source data changes" do
       described_class.new(view_class).refresh!
       ActiveRecord::Base.connection.execute("INSERT INTO items (category, amount) VALUES ('books', 100)")
+      view_class.record_write_delta!("INSERT INTO items (category, amount) VALUES ('books', 100)")
 
       described_class.new(view_class).refresh!
       books_total = view_class.find_by(category: "books").total_amount
       expect(books_total).to eq(115)
     end
 
-    context "with incremental refresh mode" do
+    context "with default incremental maintenance" do
       let(:view_class) do
         Class.new(ActiveRecord::Materialized::View) do
-          self.table_name = "mv_incremental_refresh_mode"
+          self.table_name = "mv_default_incremental"
 
           materialized_from <<~SQL.squish
             SELECT category, SUM(amount) AS total_amount
             FROM items
-            GROUP BY category
-          SQL
-
-          refresh_mode :incremental
-          incremental_keys :category
-          incremental_from <<~SQL.squish
-            SELECT category, SUM(amount) AS total_amount
-            FROM items
-            WHERE category = 'books'
             GROUP BY category
           SQL
         end
@@ -98,12 +90,16 @@ RSpec.describe ActiveRecord::Materialized::Refresher do
         )
       end
 
-      it "uses incremental refresh after the cache table exists" do
+      it "maintains affected partitions in place on subsequent refreshes" do
         described_class.new(view_class).refresh!
         ActiveRecord::Base.connection.execute("INSERT INTO items (category, amount) VALUES ('books', 5)")
+        view_class.record_write_delta!("INSERT INTO items (category, amount) VALUES ('books', 5)")
 
+        connection = ActiveRecord::Base.connection
+        allow(connection).to receive(:execute).and_call_original
         described_class.new(view_class).refresh!
 
+        expect(connection).not_to have_received(:execute).with(/ALTER TABLE .* RENAME TO/)
         expect(view_class.find_by(category: "books").total_amount).to eq(15)
         expect(view_class.find_by(category: "games").total_amount).to eq(20)
       end

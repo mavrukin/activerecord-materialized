@@ -23,9 +23,13 @@ module ActiveRecord
           T.must(dependency_index[normalize_table(table)])
         end
 
-        sig { params(tables: T::Array[String]).void }
-        def schedule_refresh_for_tables!(tables)
-          affected_views(tables).each { |view| RefreshScheduler.schedule(view) }
+        sig { params(tables: T::Array[String], sql: T.nilable(String), sql_statements: T.nilable(T::Array[String])).void }
+        def schedule_refresh_for_tables!(tables, sql: nil, sql_statements: nil)
+          statements = sql_statements || [sql].compact
+          affected_views(tables).each do |view|
+            statements.each { |statement| view.record_write_delta!(statement) }
+            RefreshScheduler.schedule(view)
+          end
         end
 
         sig { params(tables: T::Array[String]).void }

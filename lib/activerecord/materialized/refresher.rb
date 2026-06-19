@@ -25,7 +25,7 @@ module ActiveRecord
         metadata.mark_refreshing!
         view_class.run_refresh_callbacks(:before_refresh)
 
-        row_count = perform_refresh!
+        row_count = perform_refresh!(force: force)
 
         duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
         metadata.mark_refreshed!(row_count: row_count, duration_ms: duration_ms)
@@ -49,26 +49,19 @@ module ActiveRecord
         @metadata ||= view_class.metadata
       end
 
-      sig { returns(Integer) }
-      def perform_refresh!
+      sig { params(force: T::Boolean).returns(Integer) }
+      def perform_refresh!(force: false)
         connection = view_class.connection
         source_sql = view_class.resolved_source_sql
         table_name = view_class.table_name
 
-        if incremental_refresh?(connection, table_name)
-          IncrementalRefresher.new(view_class).refresh!(connection, table_name)
-        elsif ::ActiveRecord::Materialized.atomic_swap_refresh?
+        if force || view_class.resolved_refresh_mode == :full || !table_exists?(connection, table_name)
           refresh_with_atomic_swap!(connection, table_name, source_sql)
+        elsif view_class.incrementally_maintainable?
+          IncrementalMaintainer.new(view_class).maintain!(connection, table_name)
         else
           refresh_with_truncate_insert!(connection, table_name, source_sql)
         end
-      end
-
-      sig { params(connection: Connection, table_name: String).returns(T::Boolean) }
-      def incremental_refresh?(connection, table_name)
-        view_class.resolved_refresh_mode == :incremental &&
-          table_exists?(connection, table_name) &&
-          view_class.incremental_refresh_configured?
       end
 
       sig { params(connection: Connection, table_name: String, source_sql: String).returns(Integer) }

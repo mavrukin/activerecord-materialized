@@ -62,6 +62,27 @@ module ActiveRecord
         record.update!(dirty: true)
       end
 
+      sig { params(payload: T::Hash[String, T.untyped]).void }
+      def record_maintenance_payload!(payload)
+        ensure_table!
+        record.update!(maintenance_payload: payload.to_json)
+      end
+
+      sig { returns(T.nilable(T::Hash[String, T.untyped])) }
+      def maintenance_payload
+        ensure_table!
+        raw = T.unsafe(record).maintenance_payload
+        return nil if raw.blank?
+
+        JSON.parse(raw)
+      end
+
+      sig { void }
+      def clear_maintenance_payload!
+        ensure_table!
+        record.update!(maintenance_payload: nil)
+      end
+
       sig { void }
       def mark_refreshing!
         ensure_table!
@@ -117,12 +138,14 @@ module ActiveRecord
             t.integer :row_count
             t.integer :refresh_duration_ms
             t.text :last_error
+            t.text :maintenance_payload
             t.timestamps
           end
           connection.add_index(::ActiveRecord::Materialized.metadata_table_name, :view_name, unique: true)
         end
 
         ensure_dirty_column!(connection)
+        ensure_maintenance_payload_column!(connection)
         MetadataRecord.reset_column_information
       end
 
@@ -137,6 +160,18 @@ module ActiveRecord
           :boolean,
           default: true,
           null: false
+        )
+      end
+
+      sig { params(connection: Connection).void }
+      def ensure_maintenance_payload_column!(connection)
+        return unless MetadataRecord.table_exists?
+        return if MetadataRecord.column_names.include?("maintenance_payload")
+
+        connection.add_column(
+          ::ActiveRecord::Materialized.metadata_table_name,
+          :maintenance_payload,
+          :text
         )
       end
     end
