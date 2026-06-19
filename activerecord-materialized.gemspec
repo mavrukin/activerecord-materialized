@@ -34,7 +34,7 @@ Gem::Specification.new do |spec|
   DESC
   spec.homepage = "https://github.com/mavrukin/activerecord-materialized"
   spec.license = "MIT"
-  spec.required_ruby_version = ">= 3.1.0"
+  spec.required_ruby_version = ">= 3.4.0"
 
   spec.metadata["homepage_uri"] = spec.homepage
   spec.metadata["source_code_uri"] = "https://github.com/mavrukin/activerecord-materialized"
@@ -44,13 +44,22 @@ Gem::Specification.new do |spec|
 
   spec.require_paths = ["lib"]
 
-  spec.add_dependency "activerecord", ">= 7.0"
-  spec.add_dependency "activesupport", ">= 7.0"
-  spec.add_dependency "railties", ">= 7.0"
+  spec.add_dependency "activerecord", ">= 8.0"
+  spec.add_dependency "activesupport", ">= 8.0"
+  spec.add_dependency "railties", ">= 8.0"
+  spec.add_dependency "sorbet-runtime", ">= 0.5"
 
   spec.add_development_dependency "benchmark", ">= 0.4"
   spec.add_development_dependency "benchmark-ips", "~> 2.13"
+  spec.add_development_dependency "lefthook", "~> 1.10"
   spec.add_development_dependency "rake", "~> 13.0"
   spec.add_development_dependency "rspec", "~> 3.13"
+  spec.add_development_dependency "rubocop", "~> 1.75"
+  spec.add_development_dependency "rubocop-performance", "~> 1.25"
+  spec.add_development_dependency "rubocop-rails", "~> 2.31"
+  spec.add_development_dependency "rubocop-rspec", "~> 3.5"
+  spec.add_development_dependency "rubocop-sorbet", "~> 0.10"
+  spec.add_development_dependency "sorbet", "~> 0.5"
   spec.add_development_dependency "sqlite3", "~> 2.1"
+  spec.add_development_dependency "tapioca", "~> 0.16"
 end

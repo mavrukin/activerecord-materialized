@@ -1,122 +1,144 @@
+# typed: strict
 # frozen_string_literal: true
 
 module ActiveRecord
   module Materialized
-  class Metadata
-    attr_reader :view_class
+    class Metadata
+      extend T::Sig
 
-    def initialize(view_class)
-      @view_class = view_class
-    end
+      sig { returns(ViewClass) }
+      attr_reader :view_class
 
-    def record
-      ensure_table!
-      MetadataRecord.find_or_initialize_by(view_name: view_class.view_key)
-    end
+      sig { params(view_class: ViewClass).void }
+      def initialize(view_class)
+        @view_class = view_class
+      end
 
-    def last_refreshed_at
-      record.last_refreshed_at
-    end
+      sig { returns(MetadataRecord) }
+      def record
+        ensure_table!
+        MetadataRecord.find_or_initialize_by(view_name: view_class.view_key)
+      end
 
-    def refreshing?
-      record.refreshing?
-    end
+      sig { returns(T.nilable(Timestamp)) }
+      def last_refreshed_at
+        record.last_refreshed_at
+      end
 
-    def row_count
-      record.row_count
-    end
+      sig { returns(T::Boolean) }
+      def refreshing?
+        !!record.refreshing?
+      end
 
-    def refresh_duration_ms
-      record.refresh_duration_ms
-    end
+      sig { returns(T.nilable(Integer)) }
+      def row_count
+        record.row_count
+      end
 
-    def dirty?
-      ensure_table!
-      record.dirty?
-    end
+      sig { returns(T.nilable(Integer)) }
+      def refresh_duration_ms
+        record.refresh_duration_ms
+      end
 
-    def stale?(max_staleness: view_class.resolved_max_staleness)
-      return true if dirty?
-      return true if last_refreshed_at.nil?
-      return false if max_staleness.nil?
+      sig { returns(T::Boolean) }
+      def dirty?
+        ensure_table!
+        !!record.dirty?
+      end
 
-      last_refreshed_at < max_staleness.ago
-    end
+      sig { params(max_staleness: T.nilable(StalenessDuration)).returns(T::Boolean) }
+      def stale?(max_staleness: view_class.resolved_max_staleness)
+        return true if dirty?
+        return true if last_refreshed_at.nil?
+        return false if max_staleness.nil?
 
-    def mark_dirty!
-      ensure_table!
-      record.update!(dirty: true)
-    end
+        refreshed_at = T.must(last_refreshed_at)
+        refreshed_at.to_time < duration_threshold(max_staleness).to_time
+      end
 
-    def mark_refreshing!
-      ensure_table!
-      record.update!(
-        refreshing: true,
-        last_error: nil
-      )
-    end
+      sig { void }
+      def mark_dirty!
+        ensure_table!
+        record.update!(dirty: true)
+      end
 
-    def mark_refreshed!(row_count:, duration_ms:)
-      ensure_table!
-      record.update!(
-        last_refreshed_at: Time.current,
-        refreshing: false,
-        dirty: false,
-        row_count: row_count,
-        refresh_duration_ms: duration_ms,
-        last_error: nil
-      )
-    end
+      sig { void }
+      def mark_refreshing!
+        ensure_table!
+        record.update!(
+          refreshing: true,
+          last_error: nil
+        )
+      end
 
-    def mark_failed!(error)
-      ensure_table!
-      record.update!(
-        refreshing: false,
-        last_error: error.message
-      )
-    end
+      sig { params(row_count: Integer, duration_ms: Integer).void }
+      def mark_refreshed!(row_count:, duration_ms:)
+        ensure_table!
+        record.update!(
+          last_refreshed_at: ::Time.zone.now,
+          refreshing: false,
+          dirty: false,
+          row_count: row_count,
+          refresh_duration_ms: duration_ms,
+          last_error: nil
+        )
+      end
 
-    private
+      sig { params(error: StandardError).void }
+      def mark_failed!(error)
+        ensure_table!
+        record.update!(
+          refreshing: false,
+          last_error: error.message
+        )
+      end
 
-    def ensure_table!
-      connection = view_class.connection
+      private
 
-      unless MetadataRecord.table_exists?
-        connection.create_table ActiveRecord::Materialized.metadata_table_name, force: :cascade do |t|
-          t.string :view_name, null: false
-          t.datetime :last_refreshed_at
-          t.boolean :refreshing, null: false, default: false
-          t.boolean :dirty, null: false, default: true
-          t.integer :row_count
-          t.integer :refresh_duration_ms
-          t.text :last_error
-          t.timestamps
+      sig { params(staleness: StalenessDuration).returns(Timestamp) }
+      def duration_threshold(staleness)
+        if staleness.is_a?(Integer)
+          ::ActiveSupport::Duration.seconds(staleness).ago
+        else
+          staleness.ago
         end
-        connection.add_index ActiveRecord::Materialized.metadata_table_name, :view_name, unique: true
       end
 
-      ensure_dirty_column!(connection)
-      MetadataRecord.reset_column_information
-    end
+      sig { void }
+      def ensure_table!
+        connection = view_class.connection
 
-    def ensure_dirty_column!(connection)
-      return unless MetadataRecord.table_exists?
-      return if MetadataRecord.column_names.include?("dirty")
+        unless MetadataRecord.table_exists?
+          connection.create_table(::ActiveRecord::Materialized.metadata_table_name, force: :cascade) do |t|
+            t.string :view_name, null: false
+            t.datetime :last_refreshed_at
+            t.boolean :refreshing, null: false, default: false
+            t.boolean :dirty, null: false, default: true
+            t.integer :row_count
+            t.integer :refresh_duration_ms
+            t.text :last_error
+            t.timestamps
+          end
+          connection.add_index(::ActiveRecord::Materialized.metadata_table_name, :view_name, unique: true)
+        end
 
-      connection.add_column ActiveRecord::Materialized.metadata_table_name, :dirty, :boolean, default: true, null: false
-    end
-
-    class MetadataRecord < ::ActiveRecord::Base
-      self.table_name = ActiveRecord::Materialized.metadata_table_name
-
-      def self.table_name=(name)
-        @table_name_override = name
+        ensure_dirty_column!(connection)
+        MetadataRecord.reset_column_information
       end
 
-      def self.table_name
-        @table_name_override || ActiveRecord::Materialized.metadata_table_name
+      sig { params(connection: Connection).void }
+      def ensure_dirty_column!(connection)
+        return unless MetadataRecord.table_exists?
+        return if MetadataRecord.column_names.include?("dirty")
+
+        connection.add_column(
+          ::ActiveRecord::Materialized.metadata_table_name,
+          :dirty,
+          :boolean,
+          default: true,
+          null: false
+        )
       end
     end
-  end
   end
 end

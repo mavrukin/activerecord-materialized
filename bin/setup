@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+echo "==> Installing gems"
+bundle install
+
+echo "==> Installing git hooks (Lefthook)"
+bundle exec lefthook install
+
+echo "==> Generating Sorbet RBIs"
+bundle exec tapioca gems 2>/dev/null || echo "    (run 'bundle exec tapioca gems' after first bundle install)"
+
+echo "==> Setup complete"
+echo "    Run 'bundle exec rspec' to verify"
+echo "    Pre-commit hooks: RuboCop, Sorbet, RSpec"

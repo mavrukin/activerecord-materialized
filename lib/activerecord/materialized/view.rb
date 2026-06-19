@@ -1,175 +1,226 @@
+# typed: strict
 # frozen_string_literal: true
 
 module ActiveRecord
   module Materialized
-  class View < ::ActiveRecord::Base
-    include RefreshCallbacks
+    class View < ::ActiveRecord::Base
+      extend T::Sig
+      include RefreshCallbacks
 
-    self.abstract_class = true
+      self.abstract_class = true
 
-    class << self
-      attr_reader :source_definition, :max_staleness_setting, :dependency_tables
+      class << self
+        extend T::Sig
 
-      def inherited(subclass)
-        super
-        subclass.instance_variable_set(:@dependency_tables, [])
-        subclass.instance_variable_set(:@refresh_strategy, nil)
-        subclass.instance_variable_set(:@refresh_debounce, nil)
-      end
+        @source_definition = T.let(nil, T.nilable(SourceDefinition))
+        @max_staleness_setting = T.let(nil, T.nilable(T.any(StalenessDuration, Proc)))
+        @dependency_tables = T.let(nil, T.nilable(T::Array[String]))
+        @refresh_strategy = T.let(nil, T.nilable(Symbol))
+        @refresh_debounce = T.let(nil, T.nilable(DebounceInterval))
+        @table_name = T.let(nil, T.nilable(String))
 
-      def view_key
-        return name.underscore if name.present?
+        sig { returns(T.nilable(SourceDefinition)) }
+        attr_reader :source_definition
 
-        if instance_variable_defined?(:@table_name) && @table_name.present?
-          @table_name
-        else
-          "anonymous_view_#{object_id}"
+        sig { returns(T.nilable(T.any(StalenessDuration, Proc))) }
+        attr_reader :max_staleness_setting
+
+        sig { returns(T::Array[String]) }
+        def dependency_tables
+          tables = T.let(T.unsafe(self).instance_variable_get(:@dependency_tables), T.nilable(T::Array[String]))
+          tables.nil? ? [] : tables
+        end
+
+        sig { params(subclass: T.class_of(View)).void }
+        def inherited(subclass)
+          super
+          T.unsafe(subclass).instance_variable_set(:@dependency_tables, [])
+          T.unsafe(subclass).instance_variable_set(:@refresh_strategy, nil)
+          T.unsafe(subclass).instance_variable_set(:@refresh_debounce, nil)
+        end
+
+        sig { returns(String) }
+        def view_key
+          return T.must(name).underscore if name.present?
+
+          table = T.let(T.unsafe(self).instance_variable_get(:@table_name), T.nilable(String))
+          table.presence || "anonymous_view_#{object_id}"
+        end
+
+        sig { params(sql: T.nilable(SourceDefinition), block: T.nilable(T.proc.returns(String))).void }
+        def materialized_from(sql = nil, &block)
+          @source_definition = T.let(sql || block, T.nilable(SourceDefinition))
+          Registry.register(self) unless abstract_class?
+        end
+
+        sig { params(tables: T.any(Symbol, String)).void }
+        def depends_on(*tables)
+          DependencyRegistry.register(self, tables)
+        end
+
+        sig { params(strategy: Symbol).void }
+        def refresh_on_change(strategy = :async)
+          @refresh_strategy = T.let(strategy.to_sym, T.nilable(Symbol))
+        end
+
+        sig { params(seconds: DebounceInterval).void }
+        def refresh_debounce(seconds)
+          @refresh_debounce = T.let(seconds, T.nilable(DebounceInterval))
+        end
+
+        sig { returns(Symbol) }
+        def resolved_refresh_strategy
+          @refresh_strategy || ActiveRecord::Materialized.configuration.default_refresh_strategy
+        end
+
+        sig { returns(T.any(Integer, Float)) }
+        def resolved_refresh_debounce
+          interval = @refresh_debounce.nil? ? ActiveRecord::Materialized.configuration.default_refresh_debounce : @refresh_debounce
+          interval.respond_to?(:to_f) ? interval.to_f : interval.to_i
+        end
+
+        sig do
+          params(
+            duration: T.nilable(StalenessDuration),
+            block: T.nilable(T.proc.returns(StalenessDuration))
+          ).void
+        end
+        def max_staleness(duration = nil, &block)
+          @max_staleness_setting = T.let(duration || block, T.nilable(T.any(StalenessDuration, Proc)))
+        end
+
+        sig { returns(T.nilable(StalenessDuration)) }
+        def resolved_max_staleness
+          setting = @max_staleness_setting
+          default = ActiveRecord::Materialized.configuration.default_max_staleness
+          return T.cast(default, T.nilable(StalenessDuration)) if setting.nil?
+          return T.unsafe(self).instance_eval(&setting) if setting.is_a?(Proc)
+
+          setting
+        end
+
+        sig { returns(String) }
+        def resolved_source_sql
+          sql = @source_definition
+          if sql.is_a?(Proc)
+            sql = T.unsafe(sql).lambda? ? sql.call : T.unsafe(self).instance_eval(&sql)
+          end
+          sql = sql.call if sql.respond_to?(:call) && !sql.is_a?(String)
+          if sql.nil? || sql.strip.empty?
+            raise ArgumentError,
+                  "materialized_from SQL is required for #{name || view_key}"
+          end
+
+          sql
+        end
+
+        sig { returns(Metadata) }
+        def metadata
+          @metadata = T.let(@metadata, T.nilable(ActiveRecord::Materialized::Metadata))
+          @metadata ||= ActiveRecord::Materialized::Metadata.new(self)
+        end
+
+        sig { returns(T::Boolean) }
+        def stale?
+          metadata.stale?
+        end
+
+        sig { returns(T::Boolean) }
+        def dirty?
+          metadata.dirty?
+        end
+
+        sig { returns(T.nilable(Timestamp)) }
+        def last_refreshed_at
+          metadata.last_refreshed_at
+        end
+
+        sig { returns(T::Boolean) }
+        def refreshing?
+          metadata.refreshing?
+        end
+
+        sig { void }
+        def mark_dependencies_changed!
+          metadata.mark_dirty!
+        end
+
+        sig { returns(T::Boolean) }
+        def needs_refresh?
+          return true unless table_exists?
+          return true if metadata.last_refreshed_at.nil?
+          return true if metadata.dirty?
+
+          max_staleness = resolved_max_staleness
+          return false if max_staleness.nil?
+
+          metadata.stale?(max_staleness: max_staleness)
+        end
+
+        sig { params(force: T::Boolean).returns(RefreshResult) }
+        def refresh!(force: false)
+          Thread.current[:ar_materialized_refreshing] = true
+          Refresher.new(self).refresh!(force: force)
+        ensure
+          Thread.current[:ar_materialized_refreshing] = false
+        end
+
+        sig { params(force: T::Boolean).returns(T.nilable(RefreshResult)) }
+        def refresh_if_stale!(force: false)
+          refresh!(force: force) if needs_refresh?
+        end
+
+        sig { returns(T::Boolean) }
+        def table_exists?
+          connection.data_source_exists?(table_name)
+        end
+
+        sig { params(args: T.untyped).returns(T.untyped) }
+        def all(*args)
+          ensure_materialized!
+          super
+        end
+
+        sig { params(args: T.untyped).returns(T.untyped) }
+        def where(*args)
+          ensure_materialized!
+          super
+        end
+
+        sig { params(args: T.untyped).returns(T.untyped) }
+        def find(*args)
+          ensure_materialized!
+          super
+        end
+
+        sig { params(args: T.untyped).returns(T.untyped) }
+        def find_by(*args)
+          ensure_materialized!
+          super
+        end
+
+        sig { params(args: T.untyped).returns(T.untyped) }
+        def count(*args)
+          ensure_materialized!
+          super
+        end
+
+        private
+
+        sig { void }
+        def ensure_materialized!
+          return if table_exists?
+          return if Thread.current[:ar_materialized_refreshing]
+
+          refresh!
         end
       end
 
-      def materialized_from(sql = nil, &block)
-        @source_definition = sql || block
-        Registry.register(self) unless abstract_class?
-      end
-
-      alias source materialized_from
-
-      def depends_on(*tables)
-        DependencyRegistry.register(self, tables)
-      end
-
-      # Refresh when declared dependency tables change.
-      # :async     - refresh after commit, debounced (default; mimics NOTIFY + worker)
-      # :immediate - refresh synchronously on each change (blocks writers)
-      # :manual    - only mark dirty; use refresh! or rake tasks explicitly
-      def refresh_on_change(strategy = :async)
-        @refresh_strategy = strategy.to_sym
-      end
-
-      def refresh_debounce(seconds)
-        @refresh_debounce = seconds
-      end
-
-      def resolved_refresh_strategy
-        @refresh_strategy || ActiveRecord::Materialized.configuration.default_refresh_strategy
-      end
-
-      def resolved_refresh_debounce
-        interval = @refresh_debounce.nil? ? ActiveRecord::Materialized.configuration.default_refresh_debounce : @refresh_debounce
-        interval.respond_to?(:to_f) ? interval.to_f : interval.to_i
-      end
-
-      def max_staleness(duration = nil, &block)
-        @max_staleness_setting = duration || block
-      end
-
-      def resolved_max_staleness
-        setting = @max_staleness_setting
-        return ActiveRecord::Materialized.configuration.default_max_staleness if setting.nil?
-        return instance_eval(&setting) if setting.is_a?(Proc)
-
-        setting
-      end
-
-      def resolved_source_sql
-        sql = source_definition
-        if sql.is_a?(Proc)
-          sql = sql.lambda? ? sql.call : instance_eval(&sql)
-        end
-        sql = sql.call if sql.respond_to?(:call) && !sql.is_a?(String)
-        raise ArgumentError, "materialized_from SQL is required for #{name || view_key}" if sql.nil? || sql.strip.empty?
-
-        sql
-      end
-
-      def metadata
-        @metadata ||= Metadata.new(self)
-      end
-
+      sig { returns(T::Boolean) }
       def stale?
-        metadata.stale?
-      end
-
-      def dirty?
-        metadata.dirty?
-      end
-
-      def last_refreshed_at
-        metadata.last_refreshed_at
-      end
-
-      def refreshing?
-        metadata.refreshing?
-      end
-
-      def mark_dependencies_changed!
-        metadata.mark_dirty!
-      end
-
-      def needs_refresh?
-        return true unless table_exists?
-        return true if metadata.last_refreshed_at.nil?
-        return true if metadata.dirty?
-
-        max_staleness = resolved_max_staleness
-        return false if max_staleness.nil?
-
-        metadata.stale?(max_staleness: max_staleness)
-      end
-
-      def refresh!(force: false)
-        Thread.current[:ar_materialized_refreshing] = true
-        Refresher.new(self).refresh!(force: force)
-      ensure
-        Thread.current[:ar_materialized_refreshing] = false
-      end
-
-      def refresh_if_stale!(force: false)
-        refresh!(force: force) if needs_refresh?
-      end
-
-      def table_exists?
-        connection.data_source_exists?(table_name)
-      end
-
-      def all(...)
-        ensure_materialized!
-        super
-      end
-
-      def where(...)
-        ensure_materialized!
-        super
-      end
-
-      def find(...)
-        ensure_materialized!
-        super
-      end
-
-      def find_by(...)
-        ensure_materialized!
-        super
-      end
-
-      def count(...)
-        ensure_materialized!
-        super
-      end
-
-      private
-
-      def ensure_materialized!
-        return if table_exists?
-        return if Thread.current[:ar_materialized_refreshing]
-
-        refresh!
+        T.bind(self, View)
+        self.class.stale?
       end
     end
-
-    def stale?
-      self.class.stale?
-    end
-  end
   end
 end
