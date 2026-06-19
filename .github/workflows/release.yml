@@ -1,0 +1,39 @@
+# Publishes the gem to RubyGems when a version tag (vX.Y.Z) is pushed.
+# Uses RubyGems trusted publishing (OIDC) — no API key or secret is
+# stored in the repository. See RELEASING.md for one-time setup.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # attach the built gem to a GitHub Release
+  id-token: write # mint the OIDC token RubyGems trades for a short-lived API key
+
+jobs:
+  release:
+    name: Build and publish to RubyGems
+    runs-on: ubuntu-latest
+    environment: release
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+          bundler-cache: true
+
+      - name: Verify the tag matches the gem version
+        run: |
+          gem_version="$(ruby -e 'require_relative "lib/activerecord/materialized/version"; puts ActiveRecord::Materialized::VERSION')"
+          tag_version="${GITHUB_REF_NAME#v}"
+          if [ "$gem_version" != "$tag_version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match gem version $gem_version" >&2
+            exit 1
+          fi
+
+      - name: Build, publish, and create a GitHub Release
+        uses: rubygems/release-gem@v1

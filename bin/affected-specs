@@ -3,7 +3,8 @@
 
 FAST_SPEC_DIR = "spec/active_record/materialized"
 HEAVY_SPEC = File.join(FAST_SPEC_DIR, "async_refresher_flush_spec.rb")
-ALL_FAST_SPECS = Dir[File.join(FAST_SPEC_DIR, "*_spec.rb")].reject { |path| path == HEAVY_SPEC }.sort.freeze
+ALL_FAST_SPECS = (Dir["spec/*_spec.rb"] + Dir[File.join(FAST_SPEC_DIR, "*_spec.rb")])
+                 .reject { |path| path == HEAVY_SPEC }.sort.freeze
 INFRA_TRIGGER = %r{\A(?:Gemfile|activerecord-materialized\.gemspec|\.rubocop|lefthook|sorbet|\.github/workflows)}
 
 # Non-obvious lib file → spec mappings. :all runs the full fast suite.
