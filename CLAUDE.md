@@ -16,6 +16,12 @@ Follow this end-to-end flow for any non-trivial unit of work:
 4. **Commit and push**, then **verify CI passes** (`.github/workflows/ci.yml`). Improve the CI itself when it's warranted.
 5. **Open a descriptive, high-standard PR** and **stop for the user to review** — do not merge.
 
+### Pre-commit / pre-push checks are mandatory
+
+**NEVER skip, bypass, or disable pre-commit or pre-push checks under any circumstances.** Do not use `--no-verify`, do not work around missing hooks, do not proceed past a skipped or failing check. The lefthook gates (RuboCop, Sorbet, RSpec, strict-sigils) must always run and pass before a commit or push lands.
+
+If the hooks cannot run (e.g. `lefthook` not installed — `Can't find lefthook in PATH`) or a check fails in a way you cannot resolve, **stop and ask the user for guidance** rather than committing/pushing anyway. First attempt to fix it properly (e.g. `bundle exec lefthook install`, or run the equivalent checks manually via `bin/ci`); only if that genuinely hits a wall do you ask how to proceed.
+
 ## Quality bar
 
 Aim for code that reads as an **exemplar of idiomatic Ruby/Rails**:
