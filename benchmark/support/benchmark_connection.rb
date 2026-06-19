@@ -21,7 +21,7 @@ module BenchmarkSupport
 
   def self.connect!
     $LOAD_PATH.unshift GEM_ROOT.join("lib").to_s
-    require "activerecord-materialized"
+    require "activerecord/materialized"
 
     db_path = ensure_database!(default_db_path)
     ActiveRecord::Base.establish_connection(adapter: "sqlite3", database: db_path)

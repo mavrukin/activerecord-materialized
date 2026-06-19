@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "support/benchmark_connection"
+require_relative "support/table_formatter"
 
 db_path = BenchmarkSupport.connect!
 
@@ -55,16 +56,15 @@ results = QUERIES.map do |query|
 end
 
 puts
-printf("%-35s %12s %12s %10s %8s\n", "Query", "Raw (s)", "MV read (s)", "Refresh(ms)", "Speedup")
+BenchmarkSupport::TableFormatter.print_compare_header
 puts "-" * 72
 results.each do |row|
-  printf(
-    "%-35s %12.4f %12.4f %10d %8.1fx\n",
-    row[:name],
-    row[:raw_avg],
-    row[:mv_avg],
-    row[:refresh_ms],
-    row[:speedup]
+  BenchmarkSupport::TableFormatter.print_compare_row(
+    query: row[:name],
+    raw: row[:raw_avg],
+    mv_read: row[:mv_avg],
+    refresh: row[:refresh_ms],
+    speedup: row[:speedup]
   )
 end
 

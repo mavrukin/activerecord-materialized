@@ -60,7 +60,7 @@ jobs:
           bundler-cache: true
 
       - name: Run unit and integration specs
-        run: bundle exec rspec --exclude-pattern "spec/integration/benchmark_update_verification_spec.rb"
+        run: bundle exec rspec --exclude-pattern "spec/active_record/materialized/async_refresher_flush_spec.rb"
 
   benchmark-integration:
     name: Benchmark integration
@@ -78,7 +78,7 @@ jobs:
         run: JOB_SCALE=medium bundle exec rake benchmark:setup
 
       - name: Run benchmark integration spec
-        run: bundle exec rspec spec/integration/benchmark_update_verification_spec.rb
+        run: bundle exec rspec spec/active_record/materialized/async_refresher_flush_spec.rb
 
   gem-build:
     name: Gem build

@@ -75,7 +75,6 @@ module ActiveRecord
         def drain_pending_unlocked
           views = pending.values
           pending.clear
-          cancel_timer_unlocked
 
           views.each do |view_class|
             next unless view_class.dirty? || !view_class.table_exists?

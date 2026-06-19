@@ -2,6 +2,7 @@
 
 require_relative "support/benchmark_connection"
 require_relative "support/dataset_info"
+require_relative "support/table_formatter"
 require "benchmark"
 
 class UpdateVerificationError < StandardError; end
@@ -26,10 +27,16 @@ def create_simulated_cast_row!(max_cast_id, offset, female_ids, movie_ids)
   )
 end
 
+def cast_simulation_ids
+  [
+    Job::CastInfo.maximum(:id).to_i,
+    Job::Name.where(gender: "f").limit(100).pluck(:id),
+    Job::Title.where(Job::Title.arel_table[:production_year].gt(2000)).limit(100).pluck(:id)
+  ]
+end
+
 def insert_synthetic_cast_rows!(count:)
-  max_cast_id = Job::CastInfo.maximum(:id).to_i
-  female_ids = Job::Name.where(gender: "f").limit(100).pluck(:id)
-  movie_ids = Job::Title.where(Job::Title.arel_table[:production_year].gt(2000)).limit(100).pluck(:id)
+  max_cast_id, female_ids, movie_ids = cast_simulation_ids
 
   assert_condition!("Need seed names and titles for update simulation", female_ids.any? && movie_ids.any?)
 
@@ -41,11 +48,11 @@ def insert_synthetic_cast_rows!(count:)
 end
 
 def print_summary_row(label, time, count)
-  printf("%<label>-36s %<time>14s %<count>14s\n", label: label, time: time, count: count)
+  BenchmarkSupport::TableFormatter.print_verify_row(stage: label, time: time, pairings: count)
 end
 
 def print_summary_count_row(label, time, count)
-  printf("%<label>-36s %<time>14s %<count>14d\n", label: label, time: time, count: count)
+  BenchmarkSupport::TableFormatter.print_verify_row(stage: label, time: time, pairings: count)
 end
 
 def time_raw_gender_query
@@ -105,7 +112,7 @@ assert_condition!("Post-refresh reads should stay fast", mv_read_after_avg < 0.0
 puts "6) Cached MV reads after refresh: #{(mv_read_after_avg * 1000).round(2)}ms avg"
 
 puts
-print_summary_row("Stage", "Time", "female pairings")
+BenchmarkSupport::TableFormatter.print_verify_header
 puts "-" * 66
 print_summary_count_row("Cached read (pre-update)", "#{(mv_read_before_avg * 1000).round(2)}ms", baseline)
 print_summary_count_row("Cached read (before refresh)", "#{(stale_read_time * 1000).round(2)}ms", @stale_total)

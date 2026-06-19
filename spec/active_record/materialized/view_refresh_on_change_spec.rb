@@ -4,7 +4,7 @@ require "benchmark"
 
 require "spec_helper"
 
-RSpec.describe "refresh on dependency change" do
+RSpec.describe ActiveRecord::Materialized::View, ".refresh_on_change" do
   let(:view_class) do
     Class.new(ActiveRecord::Materialized::View) do
       self.table_name = "mv_refresh_on_change_items"
@@ -38,7 +38,14 @@ RSpec.describe "refresh on dependency change" do
     ActiveRecord::Materialized::AsyncRefresher.flush!
 
     expect(view_class.dirty?).to be(false)
-    read_time = Benchmark.realtime { expect(view_class.where(category: "books").pick(:item_count)).to eq(2) }
+    expect(view_class.where(category: "books").pick(:item_count)).to eq(2)
+  end
+
+  it "serves refreshed reads quickly after async dependency writes" do
+    ActiveRecord::Base.connection.execute("INSERT INTO items (category, amount) VALUES ('books', 5)")
+    ActiveRecord::Materialized::AsyncRefresher.flush!
+
+    read_time = Benchmark.realtime { view_class.where(category: "books").pick(:item_count) }
     expect(read_time).to be < 0.1
   end
 

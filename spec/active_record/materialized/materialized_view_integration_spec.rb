@@ -13,7 +13,10 @@ module RefreshAndQueryIntegrationHelpers
   end
 end
 
-RSpec.describe "materialized view integration" do
+module MaterializedViewIntegration
+end
+
+RSpec.describe MaterializedViewIntegration, :integration do
   let(:view_class) do
     Class.new(ActiveRecord::Materialized::View) do
       self.table_name = "mv_revenue_by_category"

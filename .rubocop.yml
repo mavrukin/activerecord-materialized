@@ -35,34 +35,6 @@ Style/Documentation:
 Style/StringLiterals:
   EnforcedStyle: double_quotes
 
-Style/FormatStringToken:
-  Exclude:
-    - "benchmark/compare.rb"
-    - "benchmark/compare_slow.rb"
-
-Metrics/BlockLength:
-  Exclude:
-    - "spec/**/*"
-    - "Rakefile"
-    - "benchmark/**/*"
-
-Metrics/MethodLength:
-  Max: 20
-  Exclude:
-    - "lib/activerecord/materialized/view.rb"
-    - "lib/activerecord/materialized/refresher.rb"
-    - "lib/activerecord/materialized/metadata.rb"
-    - "benchmark/support/source_relations.rb"
-
-Metrics/CyclomaticComplexity:
-  Exclude:
-    - "lib/activerecord/materialized/view.rb"
-    - "lib/activerecord/materialized/refresher.rb"
-
-Naming/FileName:
-  Exclude:
-    - "lib/activerecord-materialized.rb"
-
 Rails/ApplicationRecord:
   Enabled: false
 
@@ -72,86 +44,26 @@ Rails/ApplicationJob:
 Rails/Delegate:
   Enabled: false
 
-Rails/Output:
-  Exclude:
-    - "lib/activerecord/materialized/tasks.rb"
-
-Sorbet/ConstantsFromStrings:
-  Exclude:
-    - "lib/activerecord/materialized/refresh_job.rb"
-
 Sorbet/ObsoleteStrictMemoization:
   Enabled: false
-
-Metrics/ClassLength:
-  Exclude:
-    - "lib/activerecord/materialized/view.rb"
-    - "lib/activerecord/materialized/metadata.rb"
-
-Metrics/ModuleLength:
-  Exclude:
-    - "benchmark/support/source_relations.rb"
-
-Metrics/AbcSize:
-  Exclude:
-    - "lib/activerecord/materialized/view.rb"
-    - "lib/activerecord/materialized/refresher.rb"
-    - "lib/activerecord/materialized/metadata.rb"
-    - "lib/activerecord/materialized/tasks.rb"
-    - "lib/activerecord/materialized/incremental_maintainer.rb"
-    - "lib/activerecord/materialized/view_definition.rb"
-    - "benchmark/support/source_relations.rb"
-    - "benchmark/support/dataset_info.rb"
-    - "benchmark/verify_updates.rb"
-
-Lint/HashCompareByIdentity:
-  Exclude:
-    - "lib/activerecord/materialized/dependency_registry.rb"
 
 Naming/BlockForwarding:
   Enabled: false
 
-Layout/LineLength:
-  Max: 120
-  Exclude:
-    - "lib/activerecord/materialized/view.rb"
-
 Style/ArgumentsForwarding:
   Enabled: false
 
-RSpec/SpecFilePathFormat:
-  Exclude:
-    - "spec/activerecord/materialized/view_spec.rb"
-    - "spec/activerecord/materialized/incremental_maintainer_spec.rb"
-    - "spec/activerecord/materialized/maintenance_delta_builder_spec.rb"
-    - "spec/activerecord/materialized/view_definition_spec.rb"
-    - "spec/activerecord/materialized/maintenance_delta_spec.rb"
-    - "spec/activerecord/materialized/refresher_spec.rb"
-    - "spec/activerecord/materialized/metadata_spec.rb"
-    - "spec/activerecord/materialized/registry_spec.rb"
-
 RSpec/HookArgument:
   Enabled: false
-
-RSpec/DescribeClass:
-  Exclude:
-    - "spec/integration/**/*"
-    - "spec/activerecord/materialized/refresh_on_change_spec.rb"
-    - "spec/activerecord/materialized/incremental_maintainer_spec.rb"
 
 RSpec/MultipleExpectations:
   Max: 5
 
 RSpec/ExampleLength:
   Max: 15
-  Exclude:
-    - "spec/integration/benchmark_update_verification_spec.rb"
-    - "spec/activerecord/materialized/registry_spec.rb"
 
-RSpec/BeforeAfterAll:
-  Exclude:
-    - "spec/integration/benchmark_update_verification_spec.rb"
+Layout/LineLength:
+  Max: 120
 
-RSpec/InstanceVariable:
-  Exclude:
-    - "spec/integration/benchmark_update_verification_spec.rb"
+Metrics/MethodLength:
+  Max: 20

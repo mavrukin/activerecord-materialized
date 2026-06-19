@@ -47,11 +47,16 @@ module BenchmarkSupport
     def print_report(stats)
       puts "Dataset profile:"
       puts "  detected scale: #{stats.detected_scale}"
-      puts "  cast_info rows: #{stats.cast_info_rows.to_s.reverse.gsub(/(\d{3})(?=\d)/, '\\1,').reverse}"
-      puts "  title rows:     #{stats.title_rows.to_s.reverse.gsub(/(\d{3})(?=\d)/, '\\1,').reverse}"
-      puts "  movie_companies rows: #{stats.movie_companies_rows.to_s.reverse.gsub(/(\d{3})(?=\d)/, '\\1,').reverse}"
+      puts formatted_row("cast_info rows", stats.cast_info_rows)
+      puts formatted_row("title rows", stats.title_rows)
+      puts formatted_row("movie_companies rows", stats.movie_companies_rows)
       puts "  scale marker:   #{stats.scale_file || 'none (run benchmark:setup to create)'}"
       puts
+    end
+
+    def formatted_row(label, count)
+      formatted_count = count.to_s.reverse.gsub(/(\d{3})(?=\d)/, '\\1,').reverse
+      "  #{label}: #{formatted_count}"
     end
 
     def ensure_slow_benchmark!(stats)
