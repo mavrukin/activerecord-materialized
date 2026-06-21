@@ -30,23 +30,20 @@ module BenchmarkSources
 
     def production_notes_joins
       movie_company = Job::MovieCompany.arel_table
-      production_notes_core_joins(movie_company).join(production_notes_info_join(movie_company)).join_sources
-    end
-
-    def production_notes_core_joins(movie_company)
       company_type = Job::CompanyType.arel_table
       titles = Job::Title.arel_table
+      movie_info_idx = Job::MovieInfoIdx.arel_table
+      info_types = Job::InfoType.arel_table
+
+      # Chain every join onto the single movie_company select manager. Joining a
+      # separately-built manager makes Arel emit it as a derived table
+      # (`INNER JOIN (SELECT FROM ...)`), which is invalid SQL.
       movie_company
         .join(company_type).on(company_type[:id].eq(movie_company[:company_type_id]))
         .join(titles).on(titles[:id].eq(movie_company[:movie_id]))
-    end
-
-    def production_notes_info_join(movie_company)
-      movie_info_idx = Job::MovieInfoIdx.arel_table
-      info_types = Job::InfoType.arel_table
-      movie_company
         .join(movie_info_idx).on(movie_info_idx[:movie_id].eq(movie_company[:movie_id]))
         .join(info_types).on(info_types[:id].eq(movie_info_idx[:info_type_id]))
+        .join_sources
     end
 
     def production_notes_columns
