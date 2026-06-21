@@ -44,7 +44,16 @@ module ActiveRecord
 
       sig { returns(T::Boolean) }
       def maintainable?
-        view_class.materialized? && view_class.incrementally_maintainable?
+        return false unless view_class.incrementally_maintainable?
+
+        delta = MaintenanceStore.new(view_class).pending_delta
+        return false if delta.nil?
+
+        # Never full-populate a cold view from maintenance — reads fall through
+        # to the source instead. Scoped deltas populate just their partitions.
+        return false if !view_class.materialized? && delta.full_partition?
+
+        true
       end
 
       sig { params(operation: T.proc.returns(Integer)).returns(RefreshResult) }
@@ -65,11 +74,18 @@ module ActiveRecord
       def perform_rebuild!
         row_count = RelationCacheWriter.new(view_class).atomic_swap!(view_class.resolved_source)
         metadata.mark_warm!
+        # Now fully materialized: the cold-view partition exceptions no longer
+        # apply.
+        PartitionState.new(view_class).reset!
         row_count
       end
 
       sig { returns(Integer) }
       def incremental_refresh!
+        # A cold view may not have a cache table yet; partition maintenance needs
+        # somewhere to write. Cheap DDL only — never a full populate.
+        CacheTableSchema.ensure_table!(view_class, view_class.resolved_source) unless view_class.table_exists?
+
         IncrementalMaintainer.new(view_class).maintain!(view_class.connection, view_class.table_name)
       end
 

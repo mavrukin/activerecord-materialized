@@ -97,7 +97,7 @@ module ActiveRecord
 
         sig { params(args: T.untyped).returns(T.untyped) }
         def where(*args)
-          read_scope.where(*args)
+          partition_scope(args).where(*args)
         end
 
         sig { params(args: T.untyped).returns(T.untyped) }
@@ -107,7 +107,7 @@ module ActiveRecord
 
         sig { params(args: T.untyped).returns(T.untyped) }
         def find_by(*args)
-          read_scope.find_by(*args)
+          partition_scope(args).find_by(*args)
         end
 
         sig { params(args: T.untyped).returns(T.untyped) }
@@ -121,9 +121,39 @@ module ActiveRecord
         # materialized, otherwise the cold-read path (see ColdRead).
         sig { returns(T.untyped) }
         def read_scope
-          return T.unsafe(view_class).unscoped if materialized?
+          materialized? ? cache_scope : cold_scope
+        end
 
+        # Per-partition fast path for keyed reads. On a cold view whose touched
+        # partitions are all already materialized, serve from the cache;
+        # otherwise read through and enqueue maintenance so the partitions become
+        # fast on the next read (the populate-on-read behavior).
+        sig { params(args: T::Array[T.untyped]).returns(T.untyped) }
+        def partition_scope(args)
+          return cache_scope if materialized?
+
+          keys = PartitionState.keys_from(view_class, args)
+          return cold_scope if keys.nil?
+          return cache_scope if PartitionState.new(view_class).all_fresh?(keys)
+
+          enqueue_partition_maintenance(keys)
+          cold_scope
+        end
+
+        sig { returns(T.untyped) }
+        def cache_scope
+          T.unsafe(view_class).unscoped
+        end
+
+        sig { returns(T.untyped) }
+        def cold_scope
           ColdRead.new(view_class).scope
+        end
+
+        sig { params(keys: T::Array[T.untyped]).void }
+        def enqueue_partition_maintenance(keys)
+          MaintenanceStore.new(view_class).merge!(MaintenanceDelta.scoped(keys))
+          RefreshScheduler.schedule(view_class)
         end
       end
 

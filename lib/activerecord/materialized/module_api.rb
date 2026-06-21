@@ -28,6 +28,11 @@ module ActiveRecord
         configuration.metadata_table_name
       end
 
+      sig { returns(String) }
+      def partition_table_name
+        configuration.partition_table_name
+      end
+
       sig { returns(T::Boolean) }
       def atomic_swap_refresh?
         configuration.atomic_swap_refresh

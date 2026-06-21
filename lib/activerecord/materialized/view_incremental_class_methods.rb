@@ -75,6 +75,12 @@ module ActiveRecord
 
           delta = MaintenanceDeltaBuilder.new(change, maintenance_key_columns).build
           record_write_delta!(delta)
+
+          # On a cold (partially-materialized) view the written partitions are no
+          # longer current, so drop them from the fresh set until re-maintained.
+          return if view_class.materialized? || delta.full_partition?
+
+          PartitionState.new(view_class).mark_stale!(delta.key_tuples)
         end
 
         sig { params(delta: MaintenanceDelta).void }

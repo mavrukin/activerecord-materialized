@@ -9,6 +9,9 @@ module ActiveRecord
       sig { returns(String) }
       attr_accessor :metadata_table_name
 
+      sig { returns(String) }
+      attr_accessor :partition_table_name
+
       sig { returns(T.nilable(DebounceInterval)) }
       attr_accessor :default_max_staleness
 
@@ -39,6 +42,7 @@ module ActiveRecord
       sig { void }
       def initialize
         @metadata_table_name = T.let("ar_materialized_view_metadata", String)
+        @partition_table_name = T.let("ar_materialized_view_partitions", String)
         @default_max_staleness = T.let(nil, T.nilable(DebounceInterval))
         @refresh_timeout = T.let(nil, T.nilable(Integer))
         @atomic_swap_refresh = T.let(true, T::Boolean)

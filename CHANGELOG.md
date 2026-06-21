@@ -10,6 +10,7 @@ Initial release.
 - Refresh-on-write: dependency changes schedule incremental background maintenance; reads never block on a rebuild
 - Never an implicit full rebuild — a full materialization happens only via the explicit `rebuild!(confirm: true)` / `materialized:rebuild`, so launching against a large database is safe
 - Read-through cold reads (`cold_read :read_through` default): reads on a not-yet-built view serve correct results from the source query; `:serve_stale` and `:raise` are also available
+- Per-partition freshness: a cold view materializes individual `GROUP BY` partitions on demand (keyed reads and dependency writes), serving those partitions from the cache while the rest read through — partial materialization without ever a full rebuild
 - Transparent ActiveRecord query interface (`where`, `find`, `count`, scopes)
 - Declarative `materialized_from` sources defined as an `ActiveRecord::Relation` (via a block)
 - `depends_on` dependency tracking via ActiveRecord `after_*_commit` callbacks
