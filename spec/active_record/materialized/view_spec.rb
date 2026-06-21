@@ -17,7 +17,7 @@ RSpec.describe ActiveRecord::Materialized::View do
     Item.delete_all
     Item.create!(category: "books", amount: 1)
     Item.create!(category: "games", amount: 2)
-    view_class.refresh!
+    view_class.rebuild!(confirm: true)
   end
 
   it "exposes transparent ActiveRecord query interface" do
@@ -27,7 +27,7 @@ RSpec.describe ActiveRecord::Materialized::View do
 
   it "reports staleness based on max_staleness" do
     travel_to Time.zone.local(2026, 1, 1, 12, 0, 0) do
-      view_class.refresh!
+      view_class.rebuild!(confirm: true)
       expect(view_class.stale?).to be(false)
 
       travel 2.hours
@@ -56,7 +56,7 @@ RSpec.describe ActiveRecord::Materialized::View do
       materialized_from { ViewSources.total_item_count }
     end
 
-    dynamic_view.refresh!
+    dynamic_view.rebuild!(confirm: true)
     expect(dynamic_view.pick(:total)).to eq(2)
   end
 end

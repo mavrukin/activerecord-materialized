@@ -15,6 +15,7 @@ module ActiveRecord
           create_metadata_table!(connection) unless MetadataRecord.table_exists?
           ensure_dirty_column!(connection)
           ensure_maintenance_payload_column!(connection)
+          ensure_warm_column!(connection)
           MetadataRecord.reset_column_information
         end
 
@@ -25,6 +26,7 @@ module ActiveRecord
             t.datetime :last_refreshed_at
             t.boolean :refreshing, null: false, default: false
             t.boolean :dirty, null: false, default: true
+            t.boolean :warm, null: false, default: false
             t.integer :row_count
             t.integer :refresh_duration_ms
             t.text :last_error
@@ -57,6 +59,20 @@ module ActiveRecord
             ::ActiveRecord::Materialized.metadata_table_name,
             :maintenance_payload,
             :text
+          )
+        end
+
+        sig { params(connection: Connection).void }
+        def ensure_warm_column!(connection)
+          return unless MetadataRecord.table_exists?
+          return if MetadataRecord.column_names.include?("warm")
+
+          connection.add_column(
+            ::ActiveRecord::Materialized.metadata_table_name,
+            :warm,
+            :boolean,
+            default: false,
+            null: false
           )
         end
       end

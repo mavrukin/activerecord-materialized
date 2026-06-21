@@ -30,6 +30,17 @@ module ActiveRecord
           @refresh_debounce = T.let(seconds, T.nilable(DebounceInterval))
         end
 
+        sig { params(strategy: Symbol).void }
+        def cold_read(strategy)
+          @cold_read_strategy = T.let(strategy.to_sym, T.nilable(Symbol))
+        end
+
+        sig { returns(Symbol) }
+        def resolved_cold_read_strategy
+          T.let(@cold_read_strategy, T.nilable(Symbol)) ||
+            ActiveRecord::Materialized.configuration.default_cold_read_strategy
+        end
+
         sig { returns(Symbol) }
         def resolved_refresh_strategy
           @refresh_strategy || ActiveRecord::Materialized.configuration.default_refresh_strategy

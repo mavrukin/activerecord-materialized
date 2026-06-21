@@ -50,6 +50,7 @@ RSpec.describe ActiveRecord::Materialized::AsyncRefresher, ".flush!", :benchmark
     described_class.reset!
     view_class.metadata.clear_maintenance_payload!
     ActiveRecord::Materialized::DependencyRegistry.register(view_class, view_class.dependency_tables)
+    view_class.rebuild!(confirm: true)
   end
 
   it "refreshes in the background after dependency writes so reads stay fast" do

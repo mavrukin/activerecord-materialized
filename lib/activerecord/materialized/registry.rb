@@ -32,14 +32,21 @@ module ActiveRecord
           views.values
         end
 
-        sig { params(options: T.untyped).returns(T::Array[T.untyped]) }
-        def refresh_all!(**options)
-          all.map { |view| view.refresh!(**options) }
+        # Incremental maintenance pass over every registered view (no full
+        # builds). Use rebuild_all! for an intentional full materialization.
+        sig { returns(T::Array[RefreshResult]) }
+        def refresh_all!
+          all.map(&:refresh!)
         end
 
-        sig { params(options: T.untyped).returns(T::Array[T.untyped]) }
-        def refresh_stale!(**options)
-          all.select(&:stale?).each { |view| view.refresh!(**options) }
+        sig { returns(T::Array[RefreshResult]) }
+        def refresh_stale!
+          all.select(&:stale?).map(&:refresh!)
+        end
+
+        sig { returns(T::Array[RefreshResult]) }
+        def rebuild_all!
+          all.map { |view| view.rebuild!(confirm: true) }
         end
 
         sig { void }

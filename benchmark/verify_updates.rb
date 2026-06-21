@@ -79,7 +79,7 @@ if view.table_exists?
 else
   print "1) Bootstrap (one-time atomic swap)..."
   bootstrap_recorder = BenchmarkSupport::SqlExecutionRecorder.new.install!(connection)
-  bootstrap_result = view.refresh!
+  bootstrap_result = view.rebuild!(confirm: true)
   bootstrap_ms = bootstrap_result.duration_ms
   assert_condition!(
     "Bootstrap should use atomic swap",

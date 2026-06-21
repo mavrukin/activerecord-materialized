@@ -23,7 +23,9 @@ module ActiveRecord
 
       sig { params(connection: Connection, table_name: String, relation: ::ActiveRecord::Relation).void }
       def build_table!(connection, table_name, relation)
-        result = connection.exec_query(relation.to_sql)
+        # Probe one row for column names and value-based type inference. Never
+        # buffer the whole result set just to learn the schema.
+        result = connection.exec_query(relation.limit(1).to_sql)
         columns = result.columns
         sample = result.rows.first
 

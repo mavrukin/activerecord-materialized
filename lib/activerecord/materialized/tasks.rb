@@ -7,7 +7,7 @@ module ActiveRecord
       extend T::Sig
 
       sig { void }
-      def self.define!
+      def self.define! # rubocop:disable Metrics/AbcSize
         application = T.let(T.unsafe(::Rake.application), T.untyped)
         T.unsafe(application).instance_eval do
           T.bind(self, T.untyped)
@@ -21,6 +21,11 @@ module ActiveRecord
             desc "Refresh stale materialized views"
             task refresh_stale: :environment do
               ActiveRecord::Materialized::Tasks.run_refresh_stale!
+            end
+
+            desc "Rebuild (fully materialize) all registered materialized views"
+            task rebuild: :environment do
+              ActiveRecord::Materialized::Tasks.run_rebuild_all!
             end
           end
         end
@@ -37,6 +42,12 @@ module ActiveRecord
         stale = Registry.all.select(&:stale?)
         stale.each(&:refresh!)
         T.unsafe(Rails).logger.debug { "Refreshed #{stale.size} stale materialized view(s)." }
+      end
+
+      sig { void }
+      def self.run_rebuild_all!
+        Registry.rebuild_all!
+        T.unsafe(Rails).logger.debug { "Rebuilt #{Registry.all.size} materialized view(s)." }
       end
     end
   end

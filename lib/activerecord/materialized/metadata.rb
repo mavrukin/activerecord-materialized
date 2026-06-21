@@ -52,6 +52,18 @@ module ActiveRecord
         !!record.dirty?
       end
 
+      # A view is "warm" once it has been fully materialized via rebuild! (or
+      # warm-up). Cold views are served through the read-through path.
+      sig { returns(T::Boolean) }
+      def warm?
+        !!record.warm?
+      end
+
+      sig { void }
+      def mark_warm!
+        record.update!(warm: true)
+      end
+
       sig { params(max_staleness: T.nilable(StalenessDuration)).returns(T::Boolean) }
       def stale?(max_staleness: view_class.resolved_max_staleness)
         return true if dirty?

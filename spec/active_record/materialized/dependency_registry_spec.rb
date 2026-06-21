@@ -36,7 +36,7 @@ RSpec.describe ActiveRecord::Materialized::DependencyRegistry do
   end
 
   it "marks dependent views dirty when their source table changes" do
-    view_class.refresh!
+    view_class.rebuild!(confirm: true)
     expect(view_class.dirty?).to be(false)
 
     described_class.mark_dirty_for_tables!(["items"])

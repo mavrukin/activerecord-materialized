@@ -68,7 +68,7 @@ module DemoComparison
 
     def materialized(scenario)
       view = scenario.view_class
-      unless view.table_exists?
+      unless view.materialized?
         return Result.new(scenario: scenario, mode: "Materialized view", columns: [], rows: [],
                           note: "Not built yet — click “Build / refresh” first.")
       end
@@ -80,10 +80,10 @@ module DemoComparison
 
     def refresh(scenario)
       view = scenario.view_class
-      existed = view.table_exists?
+      existed = view.materialized?
       result = nil
-      ms = measure { result = view.refresh! }
-      verb = existed ? "Refreshed the cache table" : "Bootstrapped the cache table"
+      ms = measure { result = view.rebuild!(confirm: true) }
+      verb = existed ? "Rebuilt the cache table" : "Bootstrapped the cache table"
       Result.new(scenario: scenario, mode: "Build / refresh", ms: ms, row_count: result.row_count,
                  columns: [], rows: [], note: "#{verb} — #{result.row_count} rows materialized.")
     end

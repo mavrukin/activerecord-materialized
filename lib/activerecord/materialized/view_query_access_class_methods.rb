@@ -3,6 +3,9 @@
 
 module ActiveRecord
   module Materialized
+    # Raised when a read hits a cold view under the :raise cold-read strategy.
+    class NotMaterializedError < StandardError; end
+
     module ViewQueryAccessClassMethods
       extend T::Sig
       extend T::Helpers
@@ -30,6 +33,19 @@ module ActiveRecord
           view_class.metadata.dirty?
         end
 
+        sig { returns(T::Boolean) }
+        def warm?
+          view_class.metadata.warm?
+        end
+
+        # A view is materialized once it has been explicitly rebuilt/warmed and
+        # its cache table exists. Only then are reads served from the cache;
+        # otherwise they fall through to the cold-read path.
+        sig { returns(T::Boolean) }
+        def materialized?
+          view_class.table_exists? && view_class.metadata.warm?
+        end
+
         sig { returns(T.nilable(Timestamp)) }
         def last_refreshed_at
           view_class.metadata.last_refreshed_at
@@ -46,75 +62,68 @@ module ActiveRecord
         end
 
         sig { returns(T::Boolean) }
-        def needs_refresh?
-          klass = view_class
-          return true unless klass.table_exists?
-          return true if klass.metadata.last_refreshed_at.nil?
-          return true if klass.metadata.dirty?
-
-          max_staleness = klass.resolved_max_staleness
-          return false if max_staleness.nil?
-
-          klass.metadata.stale?(max_staleness: max_staleness)
-        end
-
-        sig { params(force: T::Boolean).returns(RefreshResult) }
-        def refresh!(force: false)
-          Thread.current[:ar_materialized_refreshing] = true
-          Refresher.new(view_class).refresh!(force: force)
-        ensure
-          Thread.current[:ar_materialized_refreshing] = false
-        end
-
-        sig { params(force: T::Boolean).returns(T.nilable(RefreshResult)) }
-        def refresh_if_stale!(force: false)
-          refresh!(force: force) if needs_refresh?
-        end
-
-        sig { returns(T::Boolean) }
         def table_exists?
           view_class.connection.data_source_exists?(view_class.table_name)
         end
 
+        # Incremental maintenance only — never builds a cold view or scans all
+        # base data. Safe to call from reads and background workers.
+        sig { returns(RefreshResult) }
+        def refresh!
+          Refresher.new(view_class).refresh!
+        end
+
+        sig { returns(T.nilable(RefreshResult)) }
+        def refresh_if_stale!
+          refresh! if materialized? && stale?
+        end
+
+        # Explicit, intentional full materialization — the only path that scans
+        # all base data. Guarded by `confirm:` so it is never fired by accident.
+        sig { params(confirm: T::Boolean).returns(RefreshResult) }
+        def rebuild!(confirm: false)
+          unless confirm
+            Kernel.raise ArgumentError,
+                         "#{view_class.name}.rebuild! performs a full materialization; call rebuild!(confirm: true)"
+          end
+
+          Refresher.new(view_class).rebuild!
+        end
+
         sig { params(args: T.untyped).returns(T.untyped) }
         def all(*args)
-          ensure_materialized!
-          super
+          read_scope.all(*args)
         end
 
         sig { params(args: T.untyped).returns(T.untyped) }
         def where(*args)
-          ensure_materialized!
-          super
+          read_scope.where(*args)
         end
 
         sig { params(args: T.untyped).returns(T.untyped) }
         def find(*args)
-          ensure_materialized!
-          super
+          read_scope.find(*args)
         end
 
         sig { params(args: T.untyped).returns(T.untyped) }
         def find_by(*args)
-          ensure_materialized!
-          super
+          read_scope.find_by(*args)
         end
 
         sig { params(args: T.untyped).returns(T.untyped) }
         def count(*args)
-          ensure_materialized!
-          super
+          read_scope.count(*args)
         end
 
         private
 
-        sig { void }
-        def ensure_materialized!
-          klass = view_class
-          return if klass.table_exists?
-          return if Thread.current[:ar_materialized_refreshing]
+        # The relation reads are served from: the cache table when the view is
+        # materialized, otherwise the cold-read path (see ColdRead).
+        sig { returns(T.untyped) }
+        def read_scope
+          return T.unsafe(view_class).unscoped if materialized?
 
-          klass.refresh!
+          ColdRead.new(view_class).scope
         end
       end
 

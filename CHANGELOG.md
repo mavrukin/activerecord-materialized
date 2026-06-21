@@ -7,13 +7,15 @@ Initial release.
 ### Features
 
 - Application-level materialized views for ActiveRecord (Rails 8+, Ruby 3.4+)
-- Refresh-on-write: dependency changes schedule background refresh; reads never block on rebuild
+- Refresh-on-write: dependency changes schedule incremental background maintenance; reads never block on a rebuild
+- Never an implicit full rebuild — a full materialization happens only via the explicit `rebuild!(confirm: true)` / `materialized:rebuild`, so launching against a large database is safe
+- Read-through cold reads (`cold_read :read_through` default): reads on a not-yet-built view serve correct results from the source query; `:serve_stale` and `:raise` are also available
 - Transparent ActiveRecord query interface (`where`, `find`, `count`, scopes)
 - Declarative `materialized_from` sources defined as an `ActiveRecord::Relation` (via a block)
 - `depends_on` dependency tracking via ActiveRecord `after_*_commit` callbacks
 - Refresh strategies: `:async` (default), `:immediate`, `:manual`
 - Debounced async refresh with in-process `AsyncRefresher` or ActiveJob dispatcher
-- Atomic table-swap bootstrap (`CREATE TABLE AS` + rename) when cache table is first created
+- Atomic table-swap on `rebuild!` (`CREATE TABLE AS` + rename) for a consistent full materialization
 - Default incremental maintenance (IVM) for `GROUP BY` views — partition-local delete + re-aggregate, no routine table rebuild
 - Metadata tracking (`dirty`, `last_refreshed_at`, `row_count`, `refresh_duration_ms`, errors)
 - Optional `max_staleness` time-based safety net
