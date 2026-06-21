@@ -11,12 +11,14 @@ RSpec.describe ActiveRecord::Materialized::View, ".refresh_on_change" do
       materialized_from { ViewSources.item_count_by_category }
       depends_on Item
       refresh_on_change :async
-      refresh_debounce 0
     end
   end
 
   before do
     ActiveRecord::Materialized::AsyncRefresher.reset!
+    # Accumulate enqueued refreshes and run them only on flush!, so the
+    # dirty/stale assertions don't race a background timer.
+    ActiveRecord::Materialized::AsyncRefresher.paused = true
     Item.delete_all
     Item.create!(category: "books", amount: 1)
     Item.create!(category: "games", amount: 2)
@@ -24,6 +26,7 @@ RSpec.describe ActiveRecord::Materialized::View, ".refresh_on_change" do
   end
 
   after do
+    ActiveRecord::Materialized::AsyncRefresher.paused = false
     ActiveRecord::Materialized::AsyncRefresher.reset!
   end
 

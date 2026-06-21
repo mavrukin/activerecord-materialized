@@ -55,6 +55,7 @@ RSpec.describe ActiveRecord::Materialized::AsyncRefresher, :benchmark do
 
     before do
       described_class.reset!
+      described_class.paused = true # run enqueued refreshes only on flush!
       view_class.metadata.clear_maintenance_payload!
       ActiveRecord::Materialized::DependencyRegistry.register(view_class, view_class.dependency_tables)
       view_class.rebuild!(confirm: true)

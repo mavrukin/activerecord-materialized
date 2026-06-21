@@ -20,6 +20,16 @@ Example:
     # cold_read :read_through  # default; also :serve_stale or :raise
   end
 
+Provision the (empty) cache table with a migration generated from the
+relation, so the table exists at deploy time:
+
+  bin/rails generate activerecord_materialized:migration SalesSummary
+  bin/rails db:migrate
+
+Verify the cache tables still match their relations (e.g. in CI / on deploy):
+
+  bin/rails materialized:verify
+
 Build the view once (the only full-scan path — never happens implicitly):
 
   SalesSummary.rebuild!(confirm: true)

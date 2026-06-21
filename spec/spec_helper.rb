@@ -47,6 +47,7 @@ RSpec.configure do |config|
 
   config.before(:each) do
     ActiveRecord::Materialized::AsyncRefresher.reset!
+    ActiveRecord::Materialized::AsyncRefresher.paused = false
     unless RSpec.current_example.metadata[:benchmark]
       ActiveRecord::Base.establish_connection(adapter: "sqlite3", database: ":memory:")
       ActiveRecord::Base.connection.create_table :items, force: true do |t|

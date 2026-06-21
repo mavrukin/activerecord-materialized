@@ -21,8 +21,10 @@ Initial release.
 - Metadata tracking (`dirty`, `last_refreshed_at`, `row_count`, `refresh_duration_ms`, errors)
 - Optional `max_staleness` time-based safety net
 - `before_refresh` / `after_refresh` callbacks
-- Rails generators: `activerecord_materialized:install`, `activerecord_materialized:view`
-- Rake tasks: `materialized:refresh_all`, `materialized:refresh_stale`
+- Migration-provisioned cache tables: `activerecord_materialized:migration <View>` generates a `create_table` migration with columns/types inferred from the source relation, so the table exists at deploy time
+- Boot/CI schema drift verification (`materialized:verify` / `ActiveRecord::Materialized.verify_schema!`) raises a helpful error when a view's table no longer matches its relation — never auto-alters
+- Rails generators: `activerecord_materialized:install`, `activerecord_materialized:view`, `activerecord_materialized:migration`
+- Rake tasks: `materialized:refresh_all`, `materialized:refresh_stale`, `materialized:rebuild`, `materialized:verify`
 - JOB-schema benchmark suite with multi-second analytical queries on SQLite
 
 ### Benchmark highlights (xlarge dataset, ~2M cast_info rows)

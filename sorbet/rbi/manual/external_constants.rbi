@@ -93,6 +93,9 @@ module ::Rails
       def class_path; end
 
       sig { returns(String) }
+      def class_name; end
+
+      sig { returns(String) }
       def file_name; end
 
       sig { params(source: String, destination: String).void }

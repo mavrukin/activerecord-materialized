@@ -1,0 +1,11 @@
+# frozen_string_literal: true
+
+class <%= builder.migration_class_name %> < ActiveRecord::Migration[<%= builder.migration_version %>]
+  def change
+    create_table :<%= builder.table_name %> do |t|
+<% builder.column_definitions.each do |column| -%>
+      t.<%= column.type %> :<%= column.name %>
+<% end -%>
+    end
+  end
+end

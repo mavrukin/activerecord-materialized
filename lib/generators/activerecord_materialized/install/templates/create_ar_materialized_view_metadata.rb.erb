@@ -1,19 +1,30 @@
 # frozen_string_literal: true
 
-class CreateArMaterializedViewMetadata < ActiveRecord::Migration[7.1]
+class CreateArMaterializedViewMetadata < ActiveRecord::Migration[<%= ActiveRecord::Migration.current_version %>]
   def change
     create_table :ar_materialized_view_metadata do |t|
       t.string :view_name, null: false
       t.datetime :last_refreshed_at
       t.boolean :refreshing, null: false, default: false
       t.boolean :dirty, null: false, default: true
+      t.boolean :warm, null: false, default: false
       t.integer :row_count
       t.integer :refresh_duration_ms
       t.text :last_error
+      t.text :maintenance_payload
 
       t.timestamps
     end
 
     add_index :ar_materialized_view_metadata, :view_name, unique: true
+
+    create_table :ar_materialized_view_partitions do |t|
+      t.string :view_name, null: false
+      t.string :partition_key, null: false
+
+      t.datetime :created_at, null: false
+    end
+
+    add_index :ar_materialized_view_partitions, %i[view_name partition_key], unique: true
   end
 end

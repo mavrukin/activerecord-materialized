@@ -23,7 +23,7 @@ module ActiveRecord
         end
 
         sig { params(class_name: String).returns(T.nilable(ViewClass)) }
-        def find_by_class_name(class_name)
+        def for_class_name(class_name)
           all.find { |view| view.name == class_name }
         end
 

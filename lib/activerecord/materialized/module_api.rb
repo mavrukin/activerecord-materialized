@@ -33,6 +33,14 @@ module ActiveRecord
         configuration.partition_table_name
       end
 
+      # Verifies every registered view's cache table still matches its source
+      # relation; raises SchemaVerifier::SchemaDriftError on the first mismatch.
+      sig { void }
+      def verify_schema!
+        registered = Registry.all
+        registered.each { |view_class| SchemaVerifier.new(view_class).verify! }
+      end
+
       sig { returns(T::Boolean) }
       def atomic_swap_refresh?
         configuration.atomic_swap_refresh

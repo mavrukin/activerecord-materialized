@@ -38,6 +38,20 @@ module ActiveRecord
           end
         end
 
+        # When paused, enqueued refreshes accumulate as pending and run only on
+        # an explicit flush! — no background timer fires. Useful for draining at
+        # a controlled checkpoint (and for deterministic tests).
+        sig { params(value: T::Boolean).void }
+        def paused=(value)
+          @paused = T.let(value, T.nilable(T::Boolean))
+        end
+
+        sig { returns(T::Boolean) }
+        def paused?
+          @paused = T.let(@paused, T.nilable(T::Boolean))
+          @paused || false
+        end
+
         private
 
         sig { returns(T::Hash[String, ViewClass]) }
@@ -53,6 +67,7 @@ module ActiveRecord
         sig { params(interval: T.any(Integer, Float)).void }
         def schedule_unlocked(interval)
           cancel_timer_unlocked
+          return if paused?
 
           @timer_thread = T.let(
             Thread.new do
