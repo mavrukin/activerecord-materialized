@@ -48,25 +48,5 @@ module ActiverecordMaterialized
 
       ::ActiveRecord::Materialized::MigrationBuilder.new(view_class)
     end
-
-    sig { returns(String) }
-    def migration_class_name
-      builder.migration_class_name
-    end
-
-    sig { returns(String) }
-    def cache_table_name
-      builder.table_name
-    end
-
-    sig { returns(T::Array[::ActiveRecord::Materialized::CacheTableSchema::ColumnDefinition]) }
-    def migration_columns
-      builder.column_definitions
-    end
-
-    sig { returns(T.any(String, Float)) }
-    def migration_version
-      ::ActiveRecord::Migration.current_version
-    end
   end
 end
