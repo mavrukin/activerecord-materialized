@@ -11,7 +11,10 @@ RSpec.describe ActiveRecord::Materialized::View, ".refresh_on_change" do
       materialized_from { ViewSources.item_count_by_category }
       depends_on Item
       refresh_on_change :async
-      refresh_debounce 0
+      # A long debounce keeps the background thread sleeping (not auto-firing)
+      # so the dirty/stale assertions are deterministic; flush! forces the
+      # refresh. It also lets reset! cleanly kill the timer between examples.
+      refresh_debounce 300
     end
   end
 
