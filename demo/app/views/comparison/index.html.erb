@@ -1,0 +1,76 @@
+<h1>activerecord-materialized</h1>
+<p class="sub">
+  Run the same analytical query the slow way and through a materialized view, then
+  mutate the data and watch the view go stale and catch back up.
+</p>
+
+<div class="stats">
+  <div><b><%= @dataset[:scale] %></b><span>dataset scale</span></div>
+  <div><b><%= number_with_delimiter @dataset[:cast_info] %></b><span>cast_info rows</span></div>
+  <div><b><%= number_with_delimiter @dataset[:titles] %></b><span>title rows</span></div>
+  <div><b><%= number_with_delimiter @dataset[:names] %></b><span>name rows</span></div>
+</div>
+
+<% if @notice.present? %>
+  <p class="notice"><%= @notice %></p>
+<% end %>
+
+<% if @result %>
+  <% raw_mode = @result.mode == "Raw query" %>
+  <% mv_mode = @result.mode == "Materialized view" %>
+  <div class="result <%= "is-raw" if raw_mode %> <%= "is-mv" if mv_mode %>">
+    <h2><%= @result.scenario.label %> — <%= @result.mode %></h2>
+    <% if @result.ms %>
+      <p class="timing"><%= @result.ms %><small> ms</small>
+        <% if @result.row_count %><small>· <%= number_with_delimiter @result.row_count %> rows</small><% end %>
+      </p>
+    <% end %>
+    <% if @result.note %><p class="desc"><%= @result.note %></p><% end %>
+    <% if @result.rows.any? %>
+      <table>
+        <thead><tr><% @result.columns.each do |col| %><th><%= col %></th><% end %></tr></thead>
+        <tbody>
+          <% @result.rows.each do |row| %>
+            <tr><% @result.columns.each do |col| %><td><%= row[col] %></td><% end %></tr>
+          <% end %>
+        </tbody>
+      </table>
+    <% end %>
+  </div>
+<% end %>
+
+<% @scenarios.each do |scenario| %>
+  <% status = scenario_status(scenario) %>
+  <div class="card">
+    <header>
+      <div>
+        <span class="tag"><%= scenario.complexity %></span>
+        <h2><%= scenario.label %></h2>
+      </div>
+      <span class="pill <%= status[:css] %>"><%= status[:label] %></span>
+    </header>
+    <p class="desc"><%= scenario.description %> &middot; view <code><%= scenario.view_name %></code></p>
+    <div class="actions">
+      <%= form_with url: raw_path(scenario.key), method: :post do %>
+        <button class="raw" type="submit">Run raw query</button>
+      <% end %>
+      <%= form_with url: materialized_path(scenario.key), method: :post do %>
+        <button class="mv" type="submit">Run materialized view</button>
+      <% end %>
+      <%= form_with url: refresh_path(scenario.key), method: :post do %>
+        <button type="submit">Build / refresh</button>
+      <% end %>
+      <% if scenario.affected_by_mutation? %>
+        <%= form_with url: mutate_path(scenario.key), method: :post do %>
+          <button type="submit">Insert a cast member</button>
+        <% end %>
+      <% end %>
+    </div>
+  </div>
+<% end %>
+
+<p class="sub" style="margin-top:2rem">
+  Tip: run the raw query first to feel the cost, then <b>Build / refresh</b> and run the
+  materialized view. Use <b>Insert a cast member</b> on “Gender pairing stats”, re-run both —
+  the raw query reflects it immediately, the view stays stale until you refresh.
+</p>
