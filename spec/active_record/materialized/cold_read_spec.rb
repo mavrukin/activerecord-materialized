@@ -2,7 +2,7 @@
 
 require "spec_helper"
 
-RSpec.describe "cold-read behavior" do # rubocop:disable RSpec/DescribeClass
+RSpec.describe ActiveRecord::Materialized::ColdRead do
   let(:view_class) do
     Class.new(ActiveRecord::Materialized::View) do
       self.table_name = "mv_cold_read_items"

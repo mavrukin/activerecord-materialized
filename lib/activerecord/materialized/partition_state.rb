@@ -32,12 +32,9 @@ module ActiveRecord
         return if key_tuples.empty?
 
         ensure_table!
-        now = Metadata::Timestamps.current
-        rows = key_tuples.uniq.map do |tuple|
-          { view_name: view_key, partition_key: serialize(tuple), created_at: now }
+        key_tuples.uniq.each do |tuple|
+          PartitionRecord.create_or_find_by(view_name: view_key, partition_key: serialize(tuple))
         end
-        # Bulk freshness bookkeeping; the unique index makes this idempotent.
-        T.unsafe(PartitionRecord).insert_all(rows, unique_by: %i[view_name partition_key]) # rubocop:disable Rails/SkipsModelValidations
       end
 
       sig { params(key_tuples: T::Array[KeyTuple]).void }

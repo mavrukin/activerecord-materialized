@@ -4,6 +4,11 @@ require "open3"
 require "tempfile"
 require "spec_helper"
 
+# Define the Railtie constant in this process (the gem only requires it when
+# Rails is already present) so the spec can describe the real class.
+require "rails/railtie"
+require_relative "../../../lib/activerecord/materialized/railtie"
+
 # The Railtie is only required when Rails is present, so the gem's normal
 # (Rails-free) specs never exercise that conditional require. Load the gem in a
 # subprocess with Rails defined to guard the require path — a regression test
@@ -18,7 +23,7 @@ RAILTIE_PROBE_SCRIPT = <<~RUBY.freeze
   print(defined?(ActiveRecord::Materialized::Railtie) ? "loaded" : "missing")
 RUBY
 
-RSpec.describe "Railtie loading under Rails" do # rubocop:disable RSpec/DescribeClass
+RSpec.describe ActiveRecord::Materialized::Railtie do
   it "requires the Railtie without a LoadError" do
     output, status = Bundler.with_unbundled_env do
       Tempfile.create(["railtie_probe", ".rb"]) do |file|
