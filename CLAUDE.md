@@ -26,6 +26,14 @@ If the hooks cannot run (e.g. `lefthook` not installed — `Can't find lefthook 
 
 **Always make new commits; never amend, rebase, squash, reset, or otherwise rewrite commit history.** No `git commit --amend`, no `git rebase` (interactive or otherwise), no `git reset` that discards commits, no force-pushing. If something needs fixing after a commit, add a follow-up commit.
 
+### Never disable lint / type rules
+
+**Never silence a failing RuboCop, Sorbet, or other lint/type check by disabling the rule.** No inline `# rubocop:disable`, no `# typed: false`/sigil downgrades, no loosening a cop's config to get a line to pass. A failing check means the code needs fixing — refactor it (split a method to lower complexity, choose an idiomatic construct, restructure a spec to describe a real class/module) until it passes honestly.
+
+### Scripts and analysis: prefer Python, never Perl
+
+**Do not use Perl** for one-off analysis, text munging, or scripting. Prefer **Python**; a small Ruby script is also fine when it fits the project. (Targeted `sed`/`grep` for simple edits is OK.)
+
 ## Quality bar
 
 Aim for code that reads as an **exemplar of idiomatic Ruby/Rails**:

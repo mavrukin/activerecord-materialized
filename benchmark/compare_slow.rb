@@ -32,7 +32,7 @@ results = SLOW_QUERIES.map do |query|
   source_relation = query[:materialized].resolved_source
 
   print "Bootstrap refresh (one-time) #{query[:name]}..."
-  refresh_result = query[:materialized].refresh!
+  refresh_result = query[:materialized].rebuild!(confirm: true)
   puts " #{refresh_result.row_count} rows in #{refresh_result.duration_ms}ms"
 
   warmup, = BenchmarkSupport.timed(iterations: 1) { source_relation.map(&:attributes) }

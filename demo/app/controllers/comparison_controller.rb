@@ -46,7 +46,7 @@ class ComparisonController < ActionController::Base
 
   def scenario_status(scenario)
     view = scenario.view_class
-    return { label: "Not built", css: "muted" } unless view.table_exists?
+    return { label: "Not built", css: "muted" } unless view.materialized?
     return { label: "Stale — needs refresh", css: "warn" } if view.dirty?
 
     { label: "Fresh", css: "ok" }

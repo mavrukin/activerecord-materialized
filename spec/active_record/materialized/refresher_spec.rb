@@ -18,9 +18,9 @@ RSpec.describe ActiveRecord::Materialized::Refresher do
     Item.create!(category: "games", amount: 20)
   end
 
-  describe "#refresh!" do
+  describe "#rebuild!" do
     it "materializes query results into the cache table" do
-      result = described_class.new(view_class).refresh!
+      result = described_class.new(view_class).rebuild!
 
       expect(result.row_count).to eq(2)
       expect(view_class.order(:category).pluck(:category, :total_amount)).to eq([
@@ -29,9 +29,10 @@ RSpec.describe ActiveRecord::Materialized::Refresher do
                                                                                 ])
     end
 
-    it "records metadata after refresh" do
+    it "marks the view warm and records metadata" do
       travel_to Time.zone.local(2026, 1, 15, 12, 0, 0) do
-        described_class.new(view_class).refresh!
+        described_class.new(view_class).rebuild!
+        expect(view_class.warm?).to be(true)
         expect(view_class.last_refreshed_at).to eq(Time.zone.local(2026, 1, 15, 12, 0, 0))
         expect(view_class.metadata.row_count).to eq(2)
         expect(view_class.metadata.refreshing?).to be(false)
@@ -43,21 +44,29 @@ RSpec.describe ActiveRecord::Materialized::Refresher do
       view_class.before_refresh { events << :before }
       view_class.after_refresh { events << :after }
 
-      described_class.new(view_class).refresh!
+      described_class.new(view_class).rebuild!
       expect(events).to eq(%i[before after])
     end
+  end
 
-    it "updates results when source data changes" do
-      described_class.new(view_class).refresh!
+  describe "#refresh!" do
+    it "is a no-op on a cold view (never builds)" do
+      result = described_class.new(view_class).refresh!
+
+      expect(result.skipped).to be(true)
+      expect(view_class.warm?).to be(false)
+    end
+
+    it "incrementally maintains affected partitions after a write" do
+      described_class.new(view_class).rebuild!
       item = Item.create!(category: "books", amount: 100)
       view_class.record_write_change!(ActiveRecord::Materialized::WriteChange.from_record(item, :create))
 
       described_class.new(view_class).refresh!
-      books_total = view_class.find_by(category: "books").total_amount
-      expect(books_total).to eq(115)
+      expect(view_class.find_by(category: "books").total_amount).to eq(115)
     end
 
-    context "with default incremental maintenance" do
+    context "with a GROUP BY view" do
       let(:view_class) do
         Class.new(ActiveRecord::Materialized::View) do
           self.table_name = "mv_default_incremental"
@@ -72,17 +81,8 @@ RSpec.describe ActiveRecord::Materialized::Refresher do
         Item.create!(category: "games", amount: 20)
       end
 
-      it "bootstraps with a full refresh when the cache table is missing" do
-        result = described_class.new(view_class).refresh!
-
-        expect(result.row_count).to eq(2)
-        expect(view_class.order(:category).pluck(:category, :total_amount)).to eq(
-          [["books", 10], ["games", 20]]
-        )
-      end
-
-      it "maintains affected partitions in place on subsequent refreshes" do
-        described_class.new(view_class).refresh!
+      it "maintains affected partitions in place without rebuilding" do
+        described_class.new(view_class).rebuild!
         item = Item.create!(category: "books", amount: 5)
         view_class.record_write_change!(ActiveRecord::Materialized::WriteChange.from_record(item, :create))
 

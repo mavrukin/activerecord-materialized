@@ -16,7 +16,7 @@ RSpec.describe ActiveRecord::Materialized::IncrementalMaintainer do
     Item.create!(category: "books", amount: 10)
     Item.create!(category: "books", amount: 5)
     Item.create!(category: "games", amount: 20)
-    ActiveRecord::Materialized::Refresher.new(view_class).refresh!
+    ActiveRecord::Materialized::Refresher.new(view_class).rebuild!
   end
 
   describe "#maintain!" do

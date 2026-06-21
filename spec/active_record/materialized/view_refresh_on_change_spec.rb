@@ -20,7 +20,7 @@ RSpec.describe ActiveRecord::Materialized::View, ".refresh_on_change" do
     Item.delete_all
     Item.create!(category: "books", amount: 1)
     Item.create!(category: "games", amount: 2)
-    view_class.refresh!
+    view_class.rebuild!(confirm: true)
   end
 
   after do
@@ -51,7 +51,6 @@ RSpec.describe ActiveRecord::Materialized::View, ".refresh_on_change" do
 
   it "does not auto-refresh when strategy is manual" do
     view_class.refresh_on_change :manual
-    view_class.refresh!
 
     Item.create!(category: "books", amount: 5)
 

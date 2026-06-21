@@ -36,10 +36,13 @@ require_relative "materialized/maintenance_delta"
 require_relative "materialized/view_definition"
 require_relative "materialized/query_expressions"
 require_relative "materialized/cache_table_schema"
+require_relative "materialized/cold_read"
 require_relative "materialized/relation_cache_writer"
 require_relative "materialized/maintenance_store"
 require_relative "materialized/incremental_maintainer"
 require_relative "materialized/metadata"
+require_relative "materialized/partition_record"
+require_relative "materialized/partition_state"
 
 require_relative "materialized/refresh_job" if defined?(ActiveJob::Base)
 

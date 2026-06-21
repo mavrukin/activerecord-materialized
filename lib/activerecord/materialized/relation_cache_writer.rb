@@ -23,7 +23,7 @@ module ActiveRecord
           view_class.delete_all
           insert_rows!(relation)
         end
-        view_class.count
+        cache_row_count
       end
 
       sig do
@@ -42,7 +42,7 @@ module ActiveRecord
           end
           insert_rows!(relation)
         end
-        view_class.count
+        cache_row_count
       end
 
       sig { params(relation: ::ActiveRecord::Relation).returns(Integer) }
@@ -55,7 +55,7 @@ module ActiveRecord
         swap_tables!(connection, temp_table, old_table)
 
         view_class.reset_column_information
-        view_class.count
+        cache_row_count
       end
 
       sig { params(temp_table: String, relation: ::ActiveRecord::Relation).void }
@@ -88,6 +88,14 @@ module ActiveRecord
 
       sig { returns(T.class_of(::ActiveRecord::Base)) }
       attr_reader :view_class
+
+      # Count straight from the cache table, bypassing the View read routing
+      # (during a rebuild the view is not warm yet, so a routed count would read
+      # through to the source).
+      sig { returns(Integer) }
+      def cache_row_count
+        T.unsafe(view_class).unscoped.count
+      end
 
       sig { params(key_tuples: T::Array[T::Array[String]]).void }
       def delete_partitions!(key_tuples)

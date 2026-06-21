@@ -2,9 +2,9 @@
 
 require "spec_helper"
 
-RSpec.describe "activerecord-materialized.gemspec" do # rubocop:disable RSpec/DescribeClass
+RSpec.describe ActiveRecord::Materialized do
   subject(:gemspec) do
-    Gem::Specification.load(File.expand_path("../activerecord-materialized.gemspec", __dir__))
+    Gem::Specification.load(File.expand_path("../../activerecord-materialized.gemspec", __dir__))
   end
 
   let(:allowed_docs) { %w[README.md LICENSE CHANGELOG.md] }

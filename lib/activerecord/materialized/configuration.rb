@@ -9,6 +9,9 @@ module ActiveRecord
       sig { returns(String) }
       attr_accessor :metadata_table_name
 
+      sig { returns(String) }
+      attr_accessor :partition_table_name
+
       sig { returns(T.nilable(DebounceInterval)) }
       attr_accessor :default_max_staleness
 
@@ -30,9 +33,16 @@ module ActiveRecord
       sig { returns(Symbol) }
       attr_accessor :refresh_queue_name
 
+      # How a read against a not-yet-materialized (cold) view behaves:
+      # :read_through (serve from the source relation), :serve_stale (serve the
+      # cache as-is), or :raise.
+      sig { returns(Symbol) }
+      attr_accessor :default_cold_read_strategy
+
       sig { void }
       def initialize
         @metadata_table_name = T.let("ar_materialized_view_metadata", String)
+        @partition_table_name = T.let("ar_materialized_view_partitions", String)
         @default_max_staleness = T.let(nil, T.nilable(DebounceInterval))
         @refresh_timeout = T.let(nil, T.nilable(Integer))
         @atomic_swap_refresh = T.let(true, T::Boolean)
@@ -40,6 +50,7 @@ module ActiveRecord
         @default_refresh_debounce = T.let(2, DebounceInterval)
         @refresh_dispatcher = T.let(:async, Symbol)
         @refresh_queue_name = T.let(:materialized_views, Symbol)
+        @default_cold_read_strategy = T.let(:read_through, Symbol)
       end
     end
   end

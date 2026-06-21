@@ -37,7 +37,7 @@ RSpec.describe MaterializedViewIntegration, :integration do
   it "supports complex aggregation workflows end-to-end" do
     RefreshAndQueryIntegrationHelpers.seed_items!
 
-    result = view_class.refresh!
+    result = view_class.rebuild!(confirm: true)
     expect(result.row_count).to eq(3)
     expect(view_class.order(:category).pluck(:category, :revenue)).to eq(
       [

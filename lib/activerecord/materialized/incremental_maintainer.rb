@@ -16,11 +16,19 @@ module ActiveRecord
         delta = maintenance_store.consume_pending_delta!
         relation = resolve_maintenance_relation(delta)
 
-        RelationCacheWriter.new(view_class).replace_partitions!(
+        row_count = RelationCacheWriter.new(view_class).replace_partitions!(
           relation,
           key_tuples: delta.key_tuples,
           full_partition: delta.full_partition?
         )
+
+        # On a cold view the maintained partitions are now materialized, so a
+        # subsequent keyed read serves them from the cache.
+        unless delta.full_partition? || view_class.materialized?
+          PartitionState.new(view_class).mark_fresh!(delta.key_tuples)
+        end
+
+        row_count
       end
 
       private

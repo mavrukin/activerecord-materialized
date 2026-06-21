@@ -16,6 +16,9 @@ class ::ActiveRecord::Materialized::MetadataRecord < ::ActiveRecord::Base
   sig { returns(T.nilable(T::Boolean)) }
   def dirty?; end
 
+  sig { returns(T.nilable(T::Boolean)) }
+  def warm?; end
+
   sig { returns(T.nilable(Integer)) }
   def row_count; end
 

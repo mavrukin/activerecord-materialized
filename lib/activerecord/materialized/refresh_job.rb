@@ -12,8 +12,9 @@ module ActiveRecord
       def perform(view_key)
         view_class = Registry.find(view_key)
         return if view_class.nil?
-        return unless view_class.dirty? || !view_class.table_exists?
+        return unless view_class.dirty?
 
+        # Incremental maintenance only; never builds a cold view.
         view_class.refresh!
       end
     end

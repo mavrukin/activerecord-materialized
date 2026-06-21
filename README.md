@@ -48,7 +48,7 @@ Many Rails applications on **MySQL**, **MariaDB**, or **SQLite** hit the same wa
 
 ### The problem with refresh-on-read
 
-A naive approach refreshes the view on the first read after data changes. That punishes the unlucky user whose visit triggers a 10-second rebuild. This gem uses **refresh-on-write**: dependency changes schedule a background rebuild after commit; reads always hit the pre-built cache.
+A naive approach refreshes the view on the first read after data changes. That punishes the unlucky user whose visit triggers a 10-second rebuild — and on a large database an implicit full rebuild can be catastrophic. This gem **never rebuilds implicitly**: a full materialization happens only via an explicit `rebuild!(confirm: true)`. Routine freshness is **incremental, on write** (dependency changes schedule partition-local maintenance after commit), and an unbuilt view stays correct via **read-through** to the source query until you build it.
 
 ---
 
@@ -95,13 +95,13 @@ flowchart TB
 ### Refresh lifecycle
 
 1. **Define** a view class with a `materialized_from` block (returning an `ActiveRecord::Relation`) and `depends_on` models.
-2. **Bootstrap** — first read (or explicit `refresh!`) materializes the source relation into the cache table via `RelationCacheWriter` + atomic swap when the cache table is missing.
+2. **Build** — an explicit `rebuild!(confirm: true)` materializes the source relation into the cache table via `RelationCacheWriter` + atomic swap. This is the only full-scan path and never fires implicitly; until it runs, reads fall through to the source (`cold_read :read_through`).
 3. **Write** — any create/update/destroy on a `depends_on` model fires an `after_*_commit` callback (installed by `DependencyTrackable`) that calls `DependencyRegistry.publish_write_change!`.
 4. **Accumulate** — for each affected view, `MaintenanceDeltaBuilder` records affected `GROUP BY` partition keys in `MaintenanceStore` (widens to all partitions when scope is unknown).
 5. **Defer** — `after_*_commit` fires only once the writing transaction commits, so changes are batched naturally and a rolled-back transaction schedules nothing.
 6. **Debounce** — rapid writes coalesce into one maintenance pass (configurable window).
 7. **Maintain** — `IncrementalMaintainer` deletes and re-aggregates only affected partitions in the existing cache table (no DDL, no atomic swap on the hot path).
-8. **Read** — `where`, `find`, `count`, scopes query the cache table directly; reads before maintenance completes return the previous snapshot, reads after see updated partitions.
+8. **Read** — once built, `where`, `find`, `count`, scopes query the cache table directly; reads before maintenance completes return the previous snapshot, reads after see updated partitions. Before the view is built, reads transparently fall through to the source query.
 
 ### Core components
 
@@ -258,10 +258,17 @@ end
 
 Sources must be `ActiveRecord::Relation` objects built with standard query APIs and Arel — not raw SQL strings. Extract complex relations to a module or class method when a view definition grows large (see `spec/support/view_sources.rb` and `benchmark/support/source_relations.rb` in this repo).
 
-Query like any ActiveRecord model:
+Build the view once (e.g. in a deploy task) — the only full-scan path, never implicit:
 
 ```ruby
-# Always hits mv_sales_summary cache table — never triggers refresh
+SalesSummary.rebuild!(confirm: true)
+```
+
+Then query like any ActiveRecord model:
+
+```ruby
+# Served from the mv_sales_summary cache table — never triggers a rebuild.
+# (Before the view is built, this reads through to the source query instead.)
 SalesSummary.where("revenue > ?", 10_000).order(revenue: :desc)
 ```
 
@@ -316,9 +323,11 @@ end
 
 | Method | Description |
 |--------|-------------|
-| `refresh!` | Rebuild cache table from the `materialized_from` relation |
-| `refresh_if_stale!` | Refresh when dirty, missing, or time-stale |
-| `dirty?` | Whether a dependency change is pending refresh |
+| `rebuild!(confirm: true)` | **Explicit** full materialization from the `materialized_from` relation — the only full-scan path; never fires implicitly |
+| `refresh!` | Incremental maintenance only (no-op on an unbuilt view); never rebuilds |
+| `refresh_if_stale!` | Incremental maintenance when materialized and stale |
+| `materialized?` | Whether the view has been built (warm) and reads serve from the cache |
+| `dirty?` | Whether a dependency change is pending maintenance |
 | `stale?` | Whether view is dirty or exceeds `max_staleness` |
 | `last_refreshed_at` | Timestamp of last successful refresh |
 | `refreshing?` | Whether a refresh is in progress |
@@ -333,6 +342,7 @@ end
 | `refresh_on_change(strategy)` | `:async`, `:immediate`, or `:manual` |
 | `refresh_debounce(duration)` | Coalesce rapid writes before refreshing |
 | `refresh_mode(mode)` | `:incremental` (default) or `:full` |
+| `cold_read(strategy)` | Read behavior before the view is built: `:read_through` (default), `:serve_stale`, or `:raise` |
 | `incremental_from { relation }` | Optional override for scoped maintenance relation |
 | `incremental_keys(*columns)` | Optional override for inferred `GROUP BY` keys |
 | `max_staleness(duration)` | Optional time-based safety refresh via rake/cron |

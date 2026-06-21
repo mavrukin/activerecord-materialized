@@ -77,8 +77,9 @@ module ActiveRecord
           pending.clear
 
           views.each do |view_class|
-            next unless view_class.dirty? || !view_class.table_exists?
+            next unless view_class.dirty?
 
+            # Incremental maintenance only; never builds a cold view.
             view_class.refresh!
           end
         end

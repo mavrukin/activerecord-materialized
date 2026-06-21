@@ -17,14 +17,22 @@ Example:
 
     depends_on :line_items
     max_staleness 12.hours
+    # cold_read :read_through  # default; also :serve_stale or :raise
   end
 
-Refresh views:
+Build the view once (the only full-scan path — never happens implicitly):
 
-  SalesSummary.refresh!
+  SalesSummary.rebuild!(confirm: true)
+
+Until a view is built, reads transparently fall through to the source query
+(cold_read :read_through). After it is built, writes to depends_on tables
+incrementally maintain it; refresh! applies that maintenance (it never rebuilds):
+
+  SalesSummary.refresh!            # incremental maintenance only
   SalesSummary.refresh_if_stale!
 
 Or via Rake:
 
-  bin/rails materialized:refresh_all
+  bin/rails materialized:rebuild       # intentional full materialization
+  bin/rails materialized:refresh_all   # incremental maintenance pass
   bin/rails materialized:refresh_stale
