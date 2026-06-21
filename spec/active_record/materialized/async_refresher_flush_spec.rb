@@ -27,7 +27,7 @@ module AsyncRefresherFlushHelpers
   end
 end
 
-RSpec.describe ActiveRecord::Materialized::AsyncRefresher, ".flush!", :benchmark do
+RSpec.describe ActiveRecord::Materialized::AsyncRefresher, ".flush!", :benchmark do # rubocop:disable RSpec/MultipleDescribes
   around do |example|
     previous_connection = ActiveRecord::Base.remove_connection
     db_path = BENCHMARK_ROOT.join("fixtures", "job.sqlite")
@@ -66,5 +66,43 @@ RSpec.describe ActiveRecord::Materialized::AsyncRefresher, ".flush!", :benchmark
 
     read_time = Benchmark.realtime { view_class.where(gender: "f").pick(:role_pairings) }
     expect(read_time).to be < 0.1
+  end
+end
+
+BENCHMARK_RELATION_NAMES = %i[
+  gender_pairing_stats_relation company_movie_cross_relation person_movie_network_relation
+  cast_coappearance_relation production_notes_relation voicing_actresses_relation
+  russian_voice_actors_relation
+].freeze
+
+# Source relations are not otherwise executed by the suite, so a relation that
+# compiles to invalid SQL (e.g. an Arel join wrapped as a derived table) only
+# surfaces when someone actually runs it. Execute each one here.
+RSpec.describe "BenchmarkSources relations", :benchmark do # rubocop:disable RSpec/DescribeClass
+  around do |example|
+    previous_connection = ActiveRecord::Base.remove_connection
+    db_path = BENCHMARK_ROOT.join("fixtures", "job.sqlite")
+    skip "Run `rake benchmark:setup` first" unless db_path.exist?
+
+    ActiveRecord::Base.establish_connection(adapter: "sqlite3", database: db_path.to_s)
+    load BENCHMARK_ROOT.join("support", "benchmark_connection.rb")
+    require BENCHMARK_ROOT.join("support", "source_relations.rb").to_s
+    BenchmarkSupport.load_materialized_models!
+
+    example.run
+  ensure
+    ActiveRecord::Base.remove_connection
+    ActiveRecord::Base.establish_connection(previous_connection) if previous_connection
+  end
+
+  it "compiles and executes every relation as valid SQL" do
+    failures = BENCHMARK_RELATION_NAMES.filter_map do |name|
+      BenchmarkSources.public_send(name).limit(1).to_a
+      nil
+    rescue ActiveRecord::StatementInvalid => e
+      "#{name}: #{e.message.lines.first&.strip}"
+    end
+
+    expect(failures).to be_empty, "relations with invalid SQL:\n#{failures.join("\n")}"
   end
 end

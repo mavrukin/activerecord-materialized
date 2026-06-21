@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>activerecord-materialized demo</title>
+  <style>
+    :root { --ink: #1b1f24; --muted: #6b7280; --line: #e5e7eb; --bg: #f7f8fa;
+            --ok: #15803d; --warn: #b45309; --raw: #b91c1c; --mv: #15803d; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+           color: var(--ink); background: var(--bg); }
+    main { max-width: 960px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+    h1 { margin: 0 0 .25rem; font-size: 1.6rem; }
+    h2 { font-size: 1.1rem; margin: 0 0 .5rem; }
+    a { color: #2563eb; }
+    .sub { color: var(--muted); margin-top: 0; }
+    .stats { display: flex; gap: 1.5rem; flex-wrap: wrap; padding: .75rem 1rem; background: #fff;
+             border: 1px solid var(--line); border-radius: 10px; margin: 1rem 0 1.5rem; }
+    .stats b { display: block; font-size: 1.2rem; }
+    .stats span { color: var(--muted); font-size: .85rem; }
+    .card { background: #fff; border: 1px solid var(--line); border-radius: 10px;
+            padding: 1rem 1.25rem; margin-bottom: 1rem; }
+    .card header { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+    .tag { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+    .desc { color: var(--muted); margin: .35rem 0 .75rem; }
+    .pill { font-size: .78rem; padding: .15rem .5rem; border-radius: 999px; border: 1px solid var(--line); }
+    .pill.ok { color: var(--ok); border-color: #bbf7d0; background: #f0fdf4; }
+    .pill.warn { color: var(--warn); border-color: #fde68a; background: #fffbeb; }
+    .pill.muted { color: var(--muted); background: #f9fafb; }
+    .actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+    .actions form { margin: 0; }
+    button { font: inherit; cursor: pointer; border: 1px solid var(--line); background: #fff;
+             padding: .4rem .75rem; border-radius: 8px; }
+    button.raw { border-color: #fecaca; color: var(--raw); }
+    button.mv { border-color: #bbf7d0; color: var(--mv); }
+    button:hover { filter: brightness(.97); }
+    .notice { padding: .6rem .9rem; border-radius: 8px; background: #eff6ff; border: 1px solid #bfdbfe;
+              margin-bottom: 1rem; }
+    .result { border: 1px solid var(--line); border-left: 4px solid #94a3b8; border-radius: 10px;
+              background: #fff; padding: 1rem 1.25rem; margin: 1.5rem 0; }
+    .result.is-raw { border-left-color: var(--raw); }
+    .result.is-mv { border-left-color: var(--mv); }
+    .timing { font-size: 1.8rem; font-weight: 700; }
+    .timing small { font-size: .9rem; font-weight: 400; color: var(--muted); }
+    table { border-collapse: collapse; width: 100%; margin-top: .75rem; font-size: .85rem; }
+    th, td { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid var(--line);
+             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 280px; }
+    th { color: var(--muted); font-weight: 600; }
+    code { background: #f3f4f6; padding: .1rem .3rem; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <main>
+    <%= yield %>
+  </main>
+</body>
+</html>

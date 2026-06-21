@@ -43,4 +43,4 @@ require_relative "materialized/metadata"
 
 require_relative "materialized/refresh_job" if defined?(ActiveJob::Base)
 
-require_relative "activerecord/materialized/railtie" if defined?(Rails::Railtie)
+require_relative "materialized/railtie" if defined?(Rails::Railtie)

@@ -1,0 +1,13 @@
+# frozen_string_literal: true
+
+source "https://rubygems.org"
+
+# A minimal Rails stack — just what the comparison UI needs.
+gem "rails", "~> 8.0"
+gem "sqlite3", "~> 2.1"
+gem "puma", "~> 6.0"
+gem "benchmark", "~> 0.4" # used by the reused benchmark harness; no longer default on Ruby 3.5+
+
+# The gem under demonstration, loaded straight from this repository exactly
+# the way a real application would depend on a released version.
+gem "activerecord-materialized", path: "..", require: "activerecord/materialized"
