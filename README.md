@@ -258,6 +258,13 @@ end
 
 Sources must be `ActiveRecord::Relation` objects built with standard query APIs and Arel — not raw SQL strings. Extract complex relations to a module or class method when a view definition grows large (see `spec/support/view_sources.rb` and `benchmark/support/source_relations.rb` in this repo).
 
+Provision the (empty) cache table with a migration generated from the relation, so it exists at deploy time:
+
+```bash
+bin/rails generate activerecord_materialized:migration SalesSummary
+bin/rails db:migrate
+```
+
 Build the view once (e.g. in a deploy task) — the only full-scan path, never implicit:
 
 ```ruby
@@ -364,8 +371,10 @@ Include or extend `ActiveRecord::Materialized::QueryExpressions` when defining a
 ### Rake tasks
 
 ```bash
-bin/rails materialized:refresh_all
+bin/rails materialized:refresh_all     # incremental maintenance pass
 bin/rails materialized:refresh_stale
+bin/rails materialized:rebuild         # intentional full materialization
+bin/rails materialized:verify          # raise on cache-table schema drift
 ```
 
 ---

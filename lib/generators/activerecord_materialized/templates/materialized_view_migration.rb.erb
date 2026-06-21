@@ -1,0 +1,11 @@
+# frozen_string_literal: true
+
+class <%= migration_class_name %> < ActiveRecord::Migration[<%= migration_version %>]
+  def change
+    create_table :<%= cache_table_name %> do |t|
+<% migration_columns.each do |column| -%>
+      t.<%= column.type %> :<%= column.name %>
+<% end -%>
+    end
+  end
+end

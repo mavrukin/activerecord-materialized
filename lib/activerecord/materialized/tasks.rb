@@ -10,7 +10,8 @@ module ActiveRecord
         {
           refresh_all: "Refresh all registered materialized views",
           refresh_stale: "Refresh stale materialized views",
-          rebuild: "Rebuild (fully materialize) all registered materialized views"
+          rebuild: "Rebuild (fully materialize) all registered materialized views",
+          verify: "Verify materialized view cache tables match their source relations"
         }.freeze,
         T::Hash[Symbol, String]
       )
@@ -36,6 +37,7 @@ module ActiveRecord
         when :refresh_all then run_refresh_all!
         when :refresh_stale then run_refresh_stale!
         when :rebuild then run_rebuild_all!
+        when :verify then run_verify!
         end
       end
 
@@ -56,6 +58,12 @@ module ActiveRecord
       def self.run_rebuild_all!
         Registry.rebuild_all!
         T.unsafe(Rails).logger.debug { "Rebuilt #{Registry.all.size} materialized view(s)." }
+      end
+
+      sig { void }
+      def self.run_verify!
+        ActiveRecord::Materialized.verify_schema!
+        T.unsafe(Rails).logger.debug { "Verified #{Registry.all.size} materialized view schema(s)." }
       end
     end
   end
