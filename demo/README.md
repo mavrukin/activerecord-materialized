@@ -1,22 +1,26 @@
 # activerecord-materialized — interactive demo
 
 A tiny Rails app that lets you *feel* the gem: run the same analytical query the
-slow way and through a materialized view, mutate the underlying data, and watch
-the view go stale and then catch back up.
+slow way and through a materialized view **side by side**, pick how big a dataset
+to run against, mutate the underlying data, and watch a view go stale and catch
+back up.
 
 It depends on the gem via `path: ".."`, exactly the way a real application would
-depend on a released version, and reads the JOB benchmark database that ships
+depend on a released version, and reads the JOB benchmark databases that ship
 with the repository.
 
 ## Setup
 
-From the **repository root**, generate a dataset (any scale works; bigger scales
-make the raw queries dramatically slower):
+From the **repository root**, generate one or more datasets. The demo discovers
+every `benchmark/fixtures/*.sqlite` file and lets you switch between them, so
+generate a couple of scales to feel the difference:
 
 ```bash
 bundle install
-bundle exec rake benchmark:setup              # medium (~180k cast_info rows)
-# JOB_SCALE=xlarge bundle exec rake benchmark:setup   # ~2M rows; seconds-long raw queries
+JOB_DB=benchmark/fixtures/job.small.sqlite  JOB_SCALE=small  bundle exec rake benchmark:setup
+JOB_DB=benchmark/fixtures/job.sqlite        JOB_SCALE=medium bundle exec rake benchmark:setup
+# Bigger = far slower raw queries (and the most convincing demo):
+JOB_DB=benchmark/fixtures/job.xlarge.sqlite JOB_SCALE=xlarge bundle exec rake benchmark:setup   # ~2M rows
 ```
 
 Then boot the demo:
@@ -27,42 +31,49 @@ bundle install
 bin/rails server          # http://localhost:3000
 ```
 
-The demo reads `../benchmark/fixtures/job.sqlite` by default. Point it elsewhere
-with `JOB_DB=/path/to/job.sqlite bin/rails server`.
+## The page
 
-## What you'll see
+- **Dataset switcher** (top) — pick which generated database to run against; the
+  app reconnects in place. Row counts update to match.
+- **Three scenarios** of increasing cost, each self-contained:
 
-The page lists three scenarios of increasing cost:
+  | Scenario | Complexity | Depends on `cast_info`? |
+  |----------|------------|--------------------------|
+  | Production notes | Simple | no |
+  | Gender pairing stats | Complex | **yes** |
+  | Person–movie network | Very complex | yes |
 
-| Scenario | Complexity | Depends on `cast_info`? |
-|----------|------------|--------------------------|
-| Production notes | Simple | no |
-| Gender pairing stats | Complex | **yes** |
-| Person–movie network | Very complex | yes |
+  Expand **Show the query** to see the actual SQL the view materializes.
 
-For each scenario you get four actions:
+Each scenario has these actions, and the result renders **inline, right under the
+scenario** (no jumping to the top of the page):
 
-- **Run raw query** — executes the source `ActiveRecord::Relation` directly. This
-  is what your app does today: correct, always current, and slow.
-- **Run materialized view** — reads the precomputed cache table. Sub-millisecond,
-  regardless of dataset size.
-- **Build / refresh** — materializes (or re-materializes) the cache table. The
-  first build is the one-time bootstrap cost; the timing is shown so you can see
-  it explicitly rather than having it hide inside a user's first read.
-- **Insert a cast member** — writes a row to `cast_info`, which the gem's
-  `after_commit` hooks turn into a "dirty" marker on every dependent view.
+- **Compare raw vs view** — runs the query both ways and shows them side by side:
+  timing, row count, and the **actual result rows**, plus whether they agree. On a
+  cold view this transparently reads *through* to the source; once built it reads
+  from the cache.
+- **Build / refresh** — materializes (or re-materializes) the cache table; the
+  one-time bootstrap cost is shown explicitly.
+- **Insert cast rows** — writes rows to `cast_info`, which the gem's `after_commit`
+  hooks turn into a "dirty" marker on every dependent view.
+- **Reset to cold** — drops the cache table so you can replay the cold-read story.
 
 ## A guided tour
 
-1. Pick **Gender pairing stats** and click **Run raw query** — note the time.
-2. Click **Build / refresh** to materialize it (watch the bootstrap cost).
-3. Click **Run materialized view** — same answer, a fraction of the time.
-4. Click **Insert a cast member**. The card flips to **Stale — needs refresh**.
-5. **Run raw query** again — the raw number already reflects the new row.
-6. **Run materialized view** again — it still shows the *old* number: the cache
-   is intentionally stale until refreshed (eventual consistency).
-7. Click **Build / refresh**, then **Run materialized view** — it has caught up,
-   and reads are fast again.
+This walks the four cases the gem is built for:
+
+1. **No prior MV → read-through.** On a fresh (or **Reset to cold**) scenario,
+   click **Compare**. The view isn't built, so it reads *through* to the source —
+   correct results, still slow. Both columns match.
+2. **Raw vs. materialized.** Click **Build / refresh**, then **Compare** again.
+   Same answer, now served from the cache table — orders of magnitude faster (the
+   gap widens dramatically on the larger datasets).
+3. **Transparent updates.** Click **Insert cast rows**, then **Compare**: the raw
+   query reflects the new rows immediately while the cache still holds the old
+   value (the card shows **Stale**), and the two result tables now differ. Click
+   **Build / refresh** and **Compare** once more — the view has caught up.
+4. **Real results, not just timings.** Every comparison shows the actual rows
+   returned by both paths, the row counts, the timings, and the query's SQL.
 
 ## Notes
 
@@ -70,4 +81,6 @@ For each scenario you get four actions:
   refresh and can watch the stale → fresh transition. Production apps typically
   keep the default `:async` strategy, which refreshes automatically in the
   background after writes commit.
+- Switching datasets reconnects ActiveRecord at runtime and resets the gem's
+  per-database schema/metadata caches; each database keeps its own cache tables.
 - Everything here lives under `demo/` and is excluded from the published gem.
