@@ -24,18 +24,13 @@ module ActiveRecord
 
       sig { returns(T::Array[T::Array[T.untyped]]) }
       def extract_tuples
-        case @change.operation.to_sym
-        when :create, :destroy
-          tuple = key_tuple(@change.attributes)
-          tuple ? [tuple] : []
-        when :update
-          tuples = []
-          tuples << key_tuple(@change.attributes) if keys_present?(@change.attributes)
-          tuples << key_tuple(@change.previous_attributes) if keys_present?(@change.previous_attributes)
-          tuples.compact
-        else
-          []
-        end
+        snapshots = case @change.operation.to_sym
+                    when :create then [@change.after]
+                    when :destroy then [@change.before]
+                    when :update then [@change.before, @change.after]
+                    else []
+                    end
+        snapshots.filter_map { |attributes| key_tuple(attributes) }.uniq
       end
 
       sig { params(attributes: T::Hash[String, T.untyped]).returns(T::Boolean) }

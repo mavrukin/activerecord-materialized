@@ -23,8 +23,8 @@ RSpec.describe ActiveRecord::Materialized::MaintenanceDeltaBuilder do
     change = ActiveRecord::Materialized::WriteChange.new(
       table_name: "items",
       operation: :update,
-      attributes: { "amount" => 10 },
-      previous_attributes: { "amount" => 5 }
+      before: { "amount" => 5 },
+      after: { "amount" => 10 }
     )
     delta = described_class.new(change, ["category"]).build
 
@@ -35,8 +35,8 @@ RSpec.describe ActiveRecord::Materialized::MaintenanceDeltaBuilder do
     change = ActiveRecord::Materialized::WriteChange.new(
       table_name: "items",
       operation: :create,
-      attributes: { "active" => false },
-      previous_attributes: {}
+      before: {},
+      after: { "active" => false }
     )
     delta = described_class.new(change, ["active"]).build
 
@@ -48,8 +48,8 @@ RSpec.describe ActiveRecord::Materialized::MaintenanceDeltaBuilder do
     change = ActiveRecord::Materialized::WriteChange.new(
       table_name: "items",
       operation: :update,
-      attributes: { "category" => "games" },
-      previous_attributes: { "category" => "books" }
+      before: { "category" => "books" },
+      after: { "category" => "games" }
     )
     delta = described_class.new(change, ["category"]).build
 

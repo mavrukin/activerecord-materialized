@@ -64,6 +64,18 @@ module ActiveRecord
           resolved_refresh_mode != :full && view_definition.incrementally_maintainable?
         end
 
+        sig { returns(AggregateAnalysis) }
+        def aggregate_analysis
+          AggregateAnalysis.new(view_class.resolved_source)
+        end
+
+        # A built (warm) view whose aggregates are all distributive uses
+        # summary-delta IVM; otherwise writes drive scoped recompute.
+        sig { returns(T::Boolean) }
+        def delta_maintaining?
+          resolved_refresh_mode != :full && view_class.materialized? && aggregate_analysis.delta_maintainable?
+        end
+
         sig { returns(T::Boolean) }
         def incremental_source_override?
           !@incremental_source_definition.nil?
@@ -71,6 +83,7 @@ module ActiveRecord
 
         sig { params(change: WriteChange).void }
         def record_write_change!(change)
+          return record_summary_delta!(change) if delta_maintaining?
           return unless incrementally_maintainable?
 
           delta = MaintenanceDeltaBuilder.new(change, maintenance_key_columns).build
@@ -81,6 +94,12 @@ module ActiveRecord
           return if view_class.materialized? || delta.full_partition?
 
           PartitionState.new(view_class).mark_stale!(delta.key_tuples)
+        end
+
+        sig { params(change: WriteChange).void }
+        def record_summary_delta!(change)
+          summary = SummaryDeltaBuilder.new(change, aggregate_analysis, maintenance_key_columns).build
+          MaintenanceStore.new(view_class).merge!(summary) unless summary.empty?
         end
 
         sig { params(delta: MaintenanceDelta).void }

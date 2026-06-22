@@ -46,12 +46,12 @@ module ActiveRecord
       def maintainable?
         return false unless view_class.incrementally_maintainable?
 
-        delta = MaintenanceStore.new(view_class).pending_delta
-        return false if delta.nil?
+        pending = MaintenanceStore.new(view_class).pending
+        return false if pending.nil?
 
         # Never full-populate a cold view from maintenance — reads fall through
         # to the source instead. Scoped deltas populate just their partitions.
-        return false if !view_class.materialized? && delta.full_partition?
+        return false if !view_class.materialized? && pending.is_a?(MaintenanceDelta) && pending.full_partition?
 
         true
       end
@@ -82,11 +82,28 @@ module ActiveRecord
 
       sig { returns(Integer) }
       def incremental_refresh!
-        # A cold view may not have a cache table yet; partition maintenance needs
-        # somewhere to write. Cheap DDL only — never a full populate.
-        CacheTableSchema.ensure_table!(view_class, view_class.resolved_source) unless view_class.table_exists?
+        ensure_cache_table!
+
+        store = MaintenanceStore.new(view_class)
+        pending = store.pending
+        return apply_summary_delta!(store, pending) if pending.is_a?(SummaryDelta)
 
         IncrementalMaintainer.new(view_class).maintain!(view_class.connection, view_class.table_name)
+      end
+
+      # A cold view may not have a cache table yet; partition maintenance needs
+      # somewhere to write. Cheap DDL only — never a full populate.
+      sig { void }
+      def ensure_cache_table!
+        return if view_class.table_exists?
+
+        CacheTableSchema.ensure_table!(view_class, view_class.resolved_source)
+      end
+
+      sig { params(store: MaintenanceStore, summary: SummaryDelta).returns(Integer) }
+      def apply_summary_delta!(store, summary)
+        store.clear!
+        DeltaMaintainer.new(view_class).apply!(summary)
       end
 
       sig { params(error: StandardError).returns(T.noreturn) }

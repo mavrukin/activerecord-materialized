@@ -3,10 +3,16 @@
 
 module ActiveRecord
   module Materialized
+    # A committed write to a dependency table, captured as full before/after
+    # attribute snapshots (string-keyed). Snapshots are complete — not just the
+    # changed columns — so maintenance can determine the affected partition and
+    # compute aggregate deltas even when the GROUP BY key or a summed column did
+    # not change in the write.
     class WriteChange
       extend T::Sig
 
       Operation = T.type_alias { T.any(Symbol, String) }
+      Attributes = T.type_alias { T::Hash[String, T.untyped] }
 
       sig { returns(String) }
       attr_reader :table_name
@@ -14,93 +20,53 @@ module ActiveRecord
       sig { returns(Operation) }
       attr_reader :operation
 
-      sig { returns(T::Hash[String, T.untyped]) }
-      attr_reader :attributes
+      sig { returns(Attributes) }
+      attr_reader :before
 
-      sig { returns(T::Hash[String, T.untyped]) }
-      attr_reader :previous_attributes
+      sig { returns(Attributes) }
+      attr_reader :after
 
-      sig do
-        params(
-          table_name: String,
-          operation: Operation,
-          attributes: T::Hash[String, T.untyped],
-          previous_attributes: T::Hash[String, T.untyped]
-        ).void
-      end
-      def initialize(table_name:, operation:, attributes:, previous_attributes:)
+      sig { params(table_name: String, operation: Operation, before: Attributes, after: Attributes).void }
+      def initialize(table_name:, operation:, before:, after:)
         @table_name = table_name
         @operation = operation
-        @attributes = attributes
-        @previous_attributes = previous_attributes
+        @before = before
+        @after = after
       end
 
       sig { params(record: ::ActiveRecord::Base, operation: Operation).returns(WriteChange) }
       def self.from_record(record, operation)
+        table_name = record.class.table_name
         case operation.to_sym
         when :create
-          from_create(record)
+          new(table_name: table_name, operation: :create, before: {}, after: stringify_keys(record.attributes))
         when :update
-          from_update(record)
+          new(table_name: table_name, operation: :update, before: old_attributes(record),
+              after: stringify_keys(record.attributes))
         when :destroy
-          from_destroy(record)
+          # attributes_in_database is emptied once the row is gone, so use the
+          # in-memory attributes to keep the destroyed row's values.
+          new(table_name: table_name, operation: :destroy, before: stringify_keys(record.attributes), after: {})
         else
           raise ArgumentError, "unsupported write operation: #{operation}"
         end
       end
 
-      sig { params(record: ::ActiveRecord::Base).returns(WriteChange) }
-      def self.from_create(record)
-        new(
-          table_name: record.class.table_name,
-          operation: :create,
-          attributes: stringify_keys(record.attributes),
-          previous_attributes: {}
-        )
+      # Full pre-update attributes: the current values with the changed columns
+      # reverted to their saved-change "before" values.
+      sig { params(record: ::ActiveRecord::Base).returns(Attributes) }
+      def self.old_attributes(record)
+        attributes = stringify_keys(record.attributes)
+        record.saved_changes.each_pair { |column, (old_value, _new_value)| attributes[column.to_s] = old_value }
+        attributes
       end
 
-      sig { params(record: ::ActiveRecord::Base).returns(WriteChange) }
-      def self.from_update(record)
-        new(
-          table_name: record.class.table_name,
-          operation: :update,
-          attributes: changed_values(record.saved_changes),
-          previous_attributes: previous_values(record.saved_changes)
-        )
-      end
-
-      sig { params(record: ::ActiveRecord::Base).returns(WriteChange) }
-      def self.from_destroy(record)
-        # `attributes_in_database` is emptied once the row is gone, so read the
-        # in-memory attributes to keep the destroyed row's GROUP BY key values
-        # and let deletes scope to a partition instead of forcing a full rebuild.
-        new(
-          table_name: record.class.table_name,
-          operation: :destroy,
-          attributes: stringify_keys(record.attributes),
-          previous_attributes: {}
-        )
-      end
-
-      sig { params(changes: T::Hash[String, T::Array[T.untyped]]).returns(T::Hash[String, T.untyped]) }
-      def self.changed_values(changes)
-        changes.transform_values(&:last)
-      end
-
-      sig { params(changes: T::Hash[String, T::Array[T.untyped]]).returns(T::Hash[String, T.untyped]) }
-      def self.previous_values(changes)
-        changes.transform_values(&:first)
-      end
-
-      sig { params(values: T::Hash[T.any(String, Symbol), T.untyped]).returns(T::Hash[String, T.untyped]) }
+      sig { params(values: T::Hash[T.any(String, Symbol), T.untyped]).returns(Attributes) }
       def self.stringify_keys(values)
-        values.each_with_object({}) do |(key, value), result|
-          result[key.to_s] = value
-        end
+        values.each_with_object({}) { |(key, value), result| result[key.to_s] = value }
       end
 
-      private_class_method :from_create, :from_update, :from_destroy, :changed_values, :previous_values,
-                           :stringify_keys
+      private_class_method :old_attributes, :stringify_keys
     end
   end
 end
