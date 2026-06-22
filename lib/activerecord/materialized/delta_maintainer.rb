@@ -49,8 +49,11 @@ module ActiveRecord
       sig { params(key_tuple: SummaryDelta::KeyTuple, column_deltas: T::Hash[String, Numeric]).void }
       def insert_partition(key_tuple, column_deltas)
         # A new partition started empty, so the accumulated deltas are its
-        # absolute aggregate values.
-        row = group_columns.zip(key_tuple).to_h.merge(column_deltas)
+        # absolute aggregate values. Aggregates with no (or a pruned-zero) delta
+        # default to 0 rather than NULL — the partition has rows, and a
+        # distributive aggregate over them is numeric (e.g. SUM of a single 0).
+        defaults = @analysis.aggregate_columns.to_h { |column| [column.name, 0] }
+        row = group_columns.zip(key_tuple).to_h.merge(defaults).merge(column_deltas)
         T.unsafe(@view_class).create!(row)
       end
 

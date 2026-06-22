@@ -82,7 +82,11 @@ module ActiveRecord
       sig { params(column: Column).returns(T::Boolean) }
       def distributive?(column)
         case column.function
-        when :sum, :count then !column.attribute.nil?
+        # A SUM over a nullable column can be NULL (all values nil), which a
+        # zero delta can't distinguish from 0, so only NOT NULL sums are
+        # delta-maintainable. COUNT counts non-nulls and is always numeric.
+        when :sum then !column.attribute.nil? && not_null_column?(column.attribute)
+        when :count then !column.attribute.nil?
         when :count_star then true
         else false
         end
