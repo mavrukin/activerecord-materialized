@@ -49,6 +49,11 @@ module ActiveRecord
           all.map { |view| view.rebuild!(confirm: true) }
         end
 
+        sig { returns(T::Array[T.nilable(RefreshResult)]) }
+        def warm_up_all!
+          all.map(&:warm_up!)
+        end
+
         sig { void }
         def reset!
           @views = {}

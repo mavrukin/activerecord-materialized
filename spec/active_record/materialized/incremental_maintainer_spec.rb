@@ -20,9 +20,9 @@ RSpec.describe ActiveRecord::Materialized::IncrementalMaintainer do
   end
 
   describe "#maintain!" do
-    it "recomputes only affected partitions without rebuilding the cache table" do
+    it "recomputes only the affected partition, leaving others untouched" do
       connection = ActiveRecord::Base.connection
-      allow(connection).to receive(:execute).and_call_original
+      games_id = view_class.unscoped.find_by(category: "games").id
 
       Item.create!(category: "books", amount: 100)
       # Drive the recompute path directly with a scoped delta (delta-maintainable
@@ -32,7 +32,8 @@ RSpec.describe ActiveRecord::Materialized::IncrementalMaintainer do
       )
       described_class.new(view_class).maintain!(connection, view_class.table_name)
 
-      expect(connection).not_to have_received(:execute)
+      # The unaffected partition's row is preserved (not part of a full rebuild).
+      expect(view_class.unscoped.find_by(category: "games").id).to eq(games_id)
       expect(view_class.order(:category).pluck(:category, :total_amount)).to eq(
         [["books", 115], ["games", 20]]
       )

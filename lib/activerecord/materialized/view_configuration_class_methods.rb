@@ -32,6 +32,7 @@ module ActiveRecord
           T.unsafe(subclass).instance_variable_set(:@incremental_source_definition, nil)
           T.unsafe(subclass).instance_variable_set(:@incremental_key_columns, nil)
           T.unsafe(subclass).instance_variable_set(:@cold_read_strategy, nil)
+          T.unsafe(subclass).instance_variable_set(:@warm_up_definition, nil)
         end
 
         sig { returns(String) }

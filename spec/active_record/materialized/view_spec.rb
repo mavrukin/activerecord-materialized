@@ -59,4 +59,37 @@ RSpec.describe ActiveRecord::Materialized::View do
     dynamic_view.rebuild!(confirm: true)
     expect(dynamic_view.pick(:total)).to eq(2)
   end
+
+  describe ".warm_up!" do
+    let(:warm_view) do
+      Class.new(described_class) do
+        self.table_name = "mv_warmup_items"
+        materialized_from { ViewSources.item_count_by_category }
+        refresh_on_change :manual
+        warm_up { [where(category: "books")] }
+      end
+    end
+
+    it "materializes the warm-up partitions on a cold view, leaving the rest cold" do
+      partitions = ActiveRecord::Materialized::PartitionState.new(warm_view)
+      expect(warm_view.materialized?).to be(false)
+
+      warm_view.warm_up!
+
+      expect(partitions.all_fresh?([["books"]])).to be(true)
+      expect(partitions.all_fresh?([["games"]])).to be(false)
+      expect(warm_view.materialized?).to be(false)
+      expect(warm_view.where(category: "books").pick(:item_count)).to eq(1)
+    end
+
+    it "is a no-op when no warm_up queries are configured" do
+      plain = Class.new(described_class) do
+        self.table_name = "mv_no_warmup"
+        materialized_from { ViewSources.item_count_by_category }
+      end
+
+      expect(plain.resolved_warm_up_queries).to eq([])
+      expect { plain.warm_up! }.not_to raise_error
+    end
+  end
 end

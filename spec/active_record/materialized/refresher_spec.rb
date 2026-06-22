@@ -81,16 +81,16 @@ RSpec.describe ActiveRecord::Materialized::Refresher do
         Item.create!(category: "games", amount: 20)
       end
 
-      it "maintains affected partitions in place without rebuilding" do
+      it "maintains only the affected partition in place" do
         described_class.new(view_class).rebuild!
+        games_id = view_class.unscoped.find_by(category: "games").id
+
         item = Item.create!(category: "books", amount: 5)
         view_class.record_write_change!(ActiveRecord::Materialized::WriteChange.from_record(item, :create))
-
-        connection = ActiveRecord::Base.connection
-        allow(connection).to receive(:execute).and_call_original
         described_class.new(view_class).refresh!
 
-        expect(connection).not_to have_received(:execute)
+        # The unaffected partition's row is preserved (no full rebuild).
+        expect(view_class.unscoped.find_by(category: "games").id).to eq(games_id)
         expect(view_class.find_by(category: "books").total_amount).to eq(15)
         expect(view_class.find_by(category: "games").total_amount).to eq(20)
       end

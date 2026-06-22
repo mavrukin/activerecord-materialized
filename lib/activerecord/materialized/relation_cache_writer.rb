@@ -103,19 +103,23 @@ module ActiveRecord
         materialized_view.view_definition.partition_scope_on(view_class, key_tuples).delete_all
       end
 
+      # Populates the cache table entirely in the database with INSERT ... SELECT
+      # over the source query — the result set never crosses into Ruby memory.
       sig { params(relation: ::ActiveRecord::Relation).void }
       def insert_rows!(relation)
-        rows = relation_rows(relation)
-        # Bulk cache writes intentionally bypass validations.
-        view_class.insert_all(rows) if rows.any? # rubocop:disable Rails/SkipsModelValidations
+        columns = view_class.column_names - ["id"]
+        return if columns.empty?
+
+        T.unsafe(view_class.connection).execute(insert_select_sql(relation, columns))
       end
 
-      sig { params(relation: ::ActiveRecord::Relation).returns(T::Array[T::Hash[String, T.untyped]]) }
-      def relation_rows(relation)
-        column_names = view_class.column_names - ["id"]
-        relation.map do |record|
-          record.attributes.slice(*column_names)
-        end
+      sig { params(relation: ::ActiveRecord::Relation, columns: T::Array[String]).returns(String) }
+      def insert_select_sql(relation, columns)
+        connection = T.unsafe(view_class.connection)
+        quoted = columns.map { |column| connection.quote_column_name(column) }.join(", ")
+        target = connection.quote_table_name(view_class.table_name)
+        source = connection.quote_table_name("mv_source")
+        "INSERT INTO #{target} (#{quoted}) SELECT #{quoted} FROM (#{relation.to_sql}) #{source}"
       end
 
       sig { params(table_name: String).returns(T.class_of(::ActiveRecord::Base)) }

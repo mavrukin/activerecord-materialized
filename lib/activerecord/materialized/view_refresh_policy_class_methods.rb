@@ -41,6 +41,32 @@ module ActiveRecord
             ActiveRecord::Materialized.configuration.default_cold_read_strategy
         end
 
+        # Representative queries run by warm_up! to materialize a cold view's hot
+        # partitions ahead of traffic, e.g.:
+        #   warm_up { [where(region: "us"), order(revenue: :desc).limit(50)] }
+        sig { params(block: T.proc.returns(T.untyped)).void }
+        def warm_up(&block)
+          @warm_up_definition = T.let(block, T.nilable(Proc))
+        end
+
+        sig { returns(T::Array[::ActiveRecord::Relation]) }
+        def resolved_warm_up_queries
+          block = T.let(@warm_up_definition, T.nilable(Proc))
+          return [] if block.nil?
+
+          Kernel.Array(T.unsafe(view_class).instance_eval(&block))
+        end
+
+        # Materializes the warm_up queries' partitions ahead of traffic: running
+        # each query enqueues scoped maintenance for the partitions it touches,
+        # then refresh! applies it. The rest of a cold view reads through on
+        # demand.
+        sig { returns(T.nilable(RefreshResult)) }
+        def warm_up!
+          resolved_warm_up_queries.each(&:to_a)
+          view_class.refresh!
+        end
+
         sig { returns(Symbol) }
         def resolved_refresh_strategy
           @refresh_strategy || ActiveRecord::Materialized.configuration.default_refresh_strategy
