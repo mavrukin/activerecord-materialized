@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "benchmark"
 require_relative "support/benchmark_connection"
 require_relative "support/table_formatter"
 
