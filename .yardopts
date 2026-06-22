@@ -1,0 +1,13 @@
+--plugin sorbet
+--markup markdown
+--markup-provider redcarpet
+--readme README.md
+--title "activerecord-materialized"
+--no-private
+--protected
+--output-dir doc
+lib/**/*.rb
+-
+docs/getting-started.md
+CHANGELOG.md
+LICENSE

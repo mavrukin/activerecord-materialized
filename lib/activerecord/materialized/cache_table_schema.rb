@@ -3,6 +3,9 @@
 
 module ActiveRecord
   module Materialized
+    # Infers a view's cache-table columns from its source relation and provisions the table.
+    #
+    # @api private
     module CacheTableSchema
       extend T::Sig
 

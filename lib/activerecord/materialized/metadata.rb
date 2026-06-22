@@ -7,6 +7,9 @@ require_relative "metadata/timestamps"
 
 module ActiveRecord
   module Materialized
+    # Reads and writes a view's freshness metadata row (dirty, warm, last_refreshed_at, …).
+    #
+    # @api private
     class Metadata
       extend T::Sig
 

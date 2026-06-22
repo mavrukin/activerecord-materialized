@@ -4,6 +4,9 @@
 module ActiveRecord
   module Materialized
     class Metadata
+      # Current-time and staleness-threshold helpers for metadata timestamps.
+      #
+      # @api private
       module Timestamps
         extend T::Sig
 

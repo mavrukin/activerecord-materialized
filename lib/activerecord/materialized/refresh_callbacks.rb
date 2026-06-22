@@ -3,6 +3,7 @@
 
 module ActiveRecord
   module Materialized
+    # Adds `before_refresh` / `after_refresh` lifecycle callbacks to a {View}.
     module RefreshCallbacks
       extend T::Sig
 
@@ -11,6 +12,7 @@ module ActiveRecord
         base.extend(ClassMethods)
       end
 
+      # The callback-registration methods available on a {View} subclass.
       module ClassMethods
         extend T::Sig
 

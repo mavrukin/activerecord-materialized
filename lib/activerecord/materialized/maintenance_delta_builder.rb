@@ -3,6 +3,9 @@
 
 module ActiveRecord
   module Materialized
+    # Derives the affected partition keys for a write from its ActiveRecord change payload.
+    #
+    # @api private
     class MaintenanceDeltaBuilder
       extend T::Sig
 

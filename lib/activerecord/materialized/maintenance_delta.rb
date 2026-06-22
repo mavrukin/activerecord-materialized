@@ -3,6 +3,9 @@
 
 module ActiveRecord
   module Materialized
+    # Pending scoped-recompute maintenance: the affected partition keys, or a full-partition marker.
+    #
+    # @api private
     class MaintenanceDelta
       extend T::Sig
 

@@ -4,6 +4,9 @@
 module ActiveRecord
   module Materialized
     class Metadata
+      # Lazily provisions and migrates the materialized-view metadata table.
+      #
+      # @api private
       module Schema
         extend T::Sig
 

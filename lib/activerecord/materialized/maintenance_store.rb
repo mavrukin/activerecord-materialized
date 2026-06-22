@@ -3,6 +3,9 @@
 
 module ActiveRecord
   module Materialized
+    # Persists a view's pending maintenance (a delta or a scope) in its metadata row.
+    #
+    # @api private
     class MaintenanceStore
       extend T::Sig
 

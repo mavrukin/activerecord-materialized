@@ -3,6 +3,8 @@
 
 module ActiveRecord
   module Materialized
+    # Incremental-maintenance DSL mixed into a {View}: `refresh_mode`, `incremental_keys`,
+    # `incremental_from`, and the per-write maintenance entry points.
     module ViewIncrementalClassMethods
       extend T::Sig
       extend T::Helpers
@@ -12,6 +14,7 @@ module ActiveRecord
         base.extend(ClassMethods)
       end
 
+      # The incremental-maintenance DSL methods available on a {View} subclass.
       module ClassMethods
         extend T::Sig
 

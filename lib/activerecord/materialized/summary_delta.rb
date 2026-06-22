@@ -4,7 +4,9 @@
 module ActiveRecord
   module Materialized
     # Accumulates signed per-partition, per-column numeric changes for a
-    # delta-maintainable view: { partition key tuple => { mv column => amount } }.
+    # delta-maintainable view (`partition key tuple => mv column => amount`).
+    #
+    # @api private
     class SummaryDelta
       extend T::Sig
 
@@ -48,7 +50,7 @@ module ActiveRecord
         merged
       end
 
-      # A list of { "key" => tuple, "columns" => {…} } so array keys survive JSON.
+      # A list of `"key" => tuple, "columns" => …` entries so array keys survive JSON.
       sig { returns(T::Hash[String, T.untyped]) }
       def serialize
         { "summary" => @buckets.map { |key_tuple, columns| { "key" => key_tuple, "columns" => columns } } }

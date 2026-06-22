@@ -4,6 +4,7 @@
 require "rails/generators"
 
 module ActiverecordMaterialized
+  # `rails generate activerecord_materialized:view NAME` — scaffolds a materialized view class.
   class ViewGenerator < ::Rails::Generators::NamedBase
     extend T::Sig
 

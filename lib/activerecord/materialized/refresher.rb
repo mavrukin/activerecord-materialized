@@ -3,9 +3,13 @@
 
 module ActiveRecord
   module Materialized
+    # Orchestrates explicit rebuilds and incremental maintenance for a single view.
+    #
+    # @api private
     class Refresher
       extend T::Sig
 
+      # Raised when a refresh or rebuild fails.
       class RefreshError < StandardError; end
 
       sig { returns(ViewClass) }

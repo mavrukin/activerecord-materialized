@@ -3,6 +3,7 @@
 
 module ActiveRecord
   module Materialized
+    # Defines the `materialized:*` rake tasks (refresh_all, refresh_stale, rebuild, verify, warm_up).
     module Tasks
       extend T::Sig
 

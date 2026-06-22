@@ -3,6 +3,9 @@
 
 module ActiveRecord
   module Materialized
+    # Hot-path scoped recompute: deletes and re-aggregates only the affected partitions in place.
+    #
+    # @api private
     class IncrementalMaintainer
       extend T::Sig
 
