@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "active_record"
+require "benchmark"
 require "pathname"
 
 module BenchmarkSupport
@@ -53,5 +54,3 @@ module BenchmarkSupport
     [times.sum / times.size, result]
   end
 end
-
-require "benchmark"
