@@ -1,0 +1,18 @@
+<div class="compare">
+  <div class="verdict">
+    <% if comparison.view.served == :read_through %>
+      <span class="badge through">view not built → read‑through</span>
+      <span class="vnote">The view served correct results straight from the source query — same cost as raw, but transparent. Build it to make reads fast.</span>
+    <% elsif comparison.speedup %>
+      <span class="badge fast"><%= number_with_delimiter comparison.speedup %>× faster</span>
+      <span class="vnote">from the cache table — independent of dataset size.</span>
+    <% end %>
+    <span class="match <%= comparison.matches ? 'ok' : 'diff' %>">
+      <%= comparison.matches ? "results match ✓" : "results differ → cache is stale (refresh to catch up)" %>
+    </span>
+  </div>
+  <div class="cols">
+    <%= render "result", result: comparison.raw, kind: "raw" %>
+    <%= render "result", result: comparison.view, kind: (comparison.view.served == :cache ? "mv" : "through") %>
+  </div>
+</div>

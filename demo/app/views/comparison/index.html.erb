@@ -1,47 +1,50 @@
-<h1>activerecord-materialized</h1>
-<p class="sub">
-  Run the same analytical query the slow way and through a materialized view, then
-  mutate the data and watch the view go stale and catch back up.
-</p>
+<header class="hero">
+  <h1>activerecord&#8209;materialized</h1>
+  <p class="sub">
+    Run the same analytical query the slow way and through a materialized view — <b>side by side</b>.
+    Then mutate the data and watch the view go stale and catch back up.
+  </p>
+</header>
 
-<div class="stats">
-  <div><b><%= @dataset[:scale] %></b><span>dataset scale</span></div>
-  <div><b><%= number_with_delimiter @dataset[:cast_info] %></b><span>cast_info rows</span></div>
-  <div><b><%= number_with_delimiter @dataset[:titles] %></b><span>title rows</span></div>
-  <div><b><%= number_with_delimiter @dataset[:names] %></b><span>name rows</span></div>
-</div>
-
-<% if @notice.present? %>
-  <p class="notice"><%= @notice %></p>
-<% end %>
-
-<% if @result %>
-  <% raw_mode = @result.mode == "Raw query" %>
-  <% mv_mode = @result.mode == "Materialized view" %>
-  <div class="result <%= "is-raw" if raw_mode %> <%= "is-mv" if mv_mode %>">
-    <h2><%= @result.scenario.label %> — <%= @result.mode %></h2>
-    <% if @result.ms %>
-      <p class="timing"><%= @result.ms %><small> ms</small>
-        <% if @result.row_count %><small>· <%= number_with_delimiter @result.row_count %> rows</small><% end %>
-      </p>
-    <% end %>
-    <% if @result.note %><p class="desc"><%= @result.note %></p><% end %>
-    <% if @result.rows.any? %>
-      <table>
-        <thead><tr><% @result.columns.each do |col| %><th><%= col %></th><% end %></tr></thead>
-        <tbody>
-          <% @result.rows.each do |row| %>
-            <tr><% @result.columns.each do |col| %><td><%= row[col] %></td><% end %></tr>
-          <% end %>
-        </tbody>
-      </table>
-    <% end %>
+<section class="toolbar">
+  <%= form_with url: select_db_path, method: :post, class: "dbform" do %>
+    <label for="dbselect">Dataset</label>
+    <select id="dbselect" name="path" onchange="this.form.requestSubmit()">
+      <% @databases.each do |db| %>
+        <option value="<%= db[:path] %>" <%= "selected" if db[:current] %>>
+          <%= db[:scale] %> — <%= db[:name] %>
+        </option>
+      <% end %>
+    </select>
+    <noscript><button type="submit">Switch</button></noscript>
+  <% end %>
+  <div class="stats">
+    <div><b><%= number_with_delimiter @dataset[:cast_info] %></b><span>cast_info rows</span></div>
+    <div><b><%= number_with_delimiter @dataset[:titles] %></b><span>titles</span></div>
+    <div><b><%= number_with_delimiter @dataset[:names] %></b><span>names</span></div>
   </div>
+</section>
+
+<% if @databases.size == 1 %>
+  <p class="hint">
+    Only the <b><%= @databases.first[:scale] %></b> dataset is generated. Add larger ones from the repo root to feel
+    the difference, then reload:<br>
+    <code>JOB_DB=benchmark/fixtures/job.xlarge.sqlite JOB_SCALE=xlarge bundle exec rake benchmark:setup</code>
+  </p>
 <% end %>
+
+<% if @notice.present? %><p class="notice"><%= @notice %></p><% end %>
+
+<ol class="howto">
+  <li><b>Compare</b> a fresh scenario — the view isn’t built, so it reads <i>through</i> to the source (correct, still slow).</li>
+  <li><b>Build / refresh</b> it, then <b>Compare</b> again — same answer, now from the cache (orders of magnitude faster).</li>
+  <li><b>Insert cast rows</b>, <b>Compare</b> — the raw query reflects them; the cache stays put until you refresh.</li>
+</ol>
 
 <% @scenarios.each do |scenario| %>
   <% status = scenario_status(scenario) %>
-  <div class="card">
+  <% active = @active == scenario.key %>
+  <section class="card<%= ' active' if active %>" id="s-<%= scenario.key %>">
     <header>
       <div>
         <span class="tag"><%= scenario.complexity %></span>
@@ -49,28 +52,37 @@
       </div>
       <span class="pill <%= status[:css] %>"><%= status[:label] %></span>
     </header>
-    <p class="desc"><%= scenario.description %> &middot; view <code><%= scenario.view_name %></code></p>
+    <p class="desc"><%= scenario.description %></p>
+    <details class="sql">
+      <summary>Show the query &middot; <code><%= scenario.view_name %></code></summary>
+      <pre><%= scenario.sql %></pre>
+    </details>
     <div class="actions">
-      <%= form_with url: raw_path(scenario.key), method: :post do %>
-        <button class="raw" type="submit">Run raw query</button>
-      <% end %>
-      <%= form_with url: materialized_path(scenario.key), method: :post do %>
-        <button class="mv" type="submit">Run materialized view</button>
+      <%= form_with url: compare_path(scenario.key), method: :post do %>
+        <button class="primary" type="submit">&#9654;&nbsp; Compare raw vs view</button>
       <% end %>
       <%= form_with url: refresh_path(scenario.key), method: :post do %>
         <button type="submit">Build / refresh</button>
       <% end %>
       <% if scenario.affected_by_mutation? %>
         <%= form_with url: mutate_path(scenario.key), method: :post do %>
-          <button type="submit">Insert a cast member</button>
+          <button type="submit">Insert cast rows</button>
+        <% end %>
+      <% end %>
+      <% if scenario.view_class.materialized? %>
+        <%= form_with url: reset_path(scenario.key), method: :post do %>
+          <button class="ghost" type="submit">Reset to cold</button>
         <% end %>
       <% end %>
     </div>
-  </div>
+    <% if active && @comparison %>
+      <%= render "comparison", comparison: @comparison %>
+    <% end %>
+  </section>
 <% end %>
 
-<p class="sub" style="margin-top:2rem">
-  Tip: run the raw query first to feel the cost, then <b>Build / refresh</b> and run the
-  materialized view. Use <b>Insert a cast member</b> on “Gender pairing stats”, re-run both —
-  the raw query reflects it immediately, the view stays stale until you refresh.
-</p>
+<% if @active.present? %>
+  <script>
+    document.getElementById("s-<%= @active %>")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  </script>
+<% end %>
