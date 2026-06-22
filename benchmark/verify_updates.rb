@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "support/benchmark_connection"
+require_relative "support/cast_simulation"
 require_relative "support/dataset_info"
 require_relative "support/sql_execution_recorder"
 require_relative "support/table_formatter"
@@ -14,38 +15,6 @@ end
 
 def female_pairing_total(view)
   view.where(gender: "f").pick(:role_pairings).to_i
-end
-
-def create_simulated_cast_row!(max_cast_id, offset, female_ids, movie_ids)
-  Job::CastInfo.create!(
-    id: max_cast_id + offset + 1,
-    person_id: female_ids[offset % female_ids.size],
-    movie_id: movie_ids[offset % movie_ids.size],
-    person_role_id: 1,
-    note: "update-simulation",
-    nr_order: offset % 20,
-    role_id: 2
-  )
-end
-
-def cast_simulation_ids
-  [
-    Job::CastInfo.maximum(:id).to_i,
-    Job::Name.where(gender: "f").limit(100).pluck(:id),
-    Job::Title.where(Job::Title.arel_table[:production_year].gt(2000)).limit(100).pluck(:id)
-  ]
-end
-
-def insert_synthetic_cast_rows!(count:)
-  max_cast_id, female_ids, movie_ids = cast_simulation_ids
-
-  assert_condition!("Need seed names and titles for update simulation", female_ids.any? && movie_ids.any?)
-
-  ActiveRecord::Base.transaction do
-    count.times { |offset| create_simulated_cast_row!(max_cast_id, offset, female_ids, movie_ids) }
-  end
-
-  count
 end
 
 def print_summary_count_row(label, time, count)
@@ -100,7 +69,7 @@ puts "   female role_pairings=#{baseline}"
 mv_read_before_avg, = BenchmarkSupport.timed(iterations: 5) { female_pairing_total(view) }
 puts "2) Cached MV reads (pre-update): #{(mv_read_before_avg * 1000).round(2)}ms avg"
 
-inserted = insert_synthetic_cast_rows!(count: Integer(ENV.fetch("UPDATE_INSERT_COUNT", "8000")))
+inserted = BenchmarkSupport::CastSimulation.insert_rows!(count: Integer(ENV.fetch("UPDATE_INSERT_COUNT", "8000")))
 puts "3) Inserted #{inserted} cast_info rows (partition scope accumulated on commit)"
 
 assert_condition!("View should be marked dirty after write", view.dirty?)

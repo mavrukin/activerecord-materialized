@@ -23,6 +23,11 @@ task "benchmark:verify_updates" => :environment do
   load File.expand_path("benchmark/verify_updates.rb", __dir__)
 end
 
+desc "Simulate the full view lifecycle: cold read, build, fast read, write/maintain, warm-up"
+task "benchmark:lifecycle" => :environment do
+  load File.expand_path("benchmark/lifecycle.rb", __dir__)
+end
+
 desc "Generate JOB-style SQLite database for benchmarks"
 task "benchmark:setup" => :environment do
   load File.expand_path("benchmark/scripts/generate_job_database.rb", __dir__)
