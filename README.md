@@ -7,15 +7,27 @@
 
 # activerecord-materialized
 
-**Application-level materialized views for Rails and ActiveRecord** — precompute expensive analytical queries into cache tables, refresh them in the background when underlying data changes, and serve reads through a transparent ActiveRecord API.
+**Materialized views for Rails apps on databases that don't have them** — precompute an expensive query into a cache table, refresh it in the background when the underlying data changes, and read it through a transparent ActiveRecord API.
 
-> **Use case:** Your reporting page runs a 12-second join across six tables. Users visit once a day. MySQL has no native materialized views. This gem gives you PostgreSQL-style semantics in application code — writes trigger refresh, reads never pay for it.
-
-> **Want to feel it?** A runnable Rails demo lives in [`demo/`](demo/) — compare raw vs. materialized timings side by side, mutate the underlying data, and watch the view go stale and then catch up.
-
+[![Gem Version](https://img.shields.io/gem/v/activerecord-materialized.svg)](https://rubygems.org/gems/activerecord-materialized)
+[![CI](https://github.com/mavrukin/activerecord-materialized/actions/workflows/ci.yml/badge.svg)](https://github.com/mavrukin/activerecord-materialized/actions/workflows/ci.yml)
 [![Ruby](https://img.shields.io/badge/ruby-%3E%3D%203.4-red)](activerecord-materialized.gemspec)
 [![Rails](https://img.shields.io/badge/rails-%3E%3D%208.0-red)](activerecord-materialized.gemspec)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+> **Use case:** Your reporting page runs a 12-second join across six tables. Users visit once a day. MySQL has no native materialized views. This gem gives you PostgreSQL-style semantics in application code — writes trigger refresh, reads never pay for it.
+
+### Why use this?
+
+- **Reads stay fast** — queries hit a small precomputed table, not a multi-second join.
+- **Freshness is automatic** — a write to a `depends_on` model schedules background maintenance; you don't refresh by hand.
+- **Nothing blocks on a rebuild** — refresh is incremental and on-write, never on-read, and a full rebuild only ever happens when you explicitly ask for it.
+- **It's just ActiveRecord** — `where`, `find`, `count`, and scopes work unchanged; an unbuilt view still returns correct results by reading through to the source.
+- **It's portable** — works on MySQL, MariaDB, and SQLite, which have no native materialized views.
+
+> 🚀 **New here? Start with the [Getting started tutorial](docs/getting-started.md)** — a hands-on, fully tested walkthrough from install to refresh-on-write.
+>
+> 🧪 **Want to feel it?** A runnable Rails demo lives in [`demo/`](demo/) — compare raw vs. materialized timings side by side, mutate the data, and watch the view go stale and catch up.
 
 **Author:** [Michael Avrukin](https://github.com/mavrukin) · **License:** [MIT](LICENSE)
 
@@ -29,12 +41,14 @@
 - [Features](#features)
 - [Gotchas and trade-offs](#gotchas-and-trade-offs)
 - [Installation](#installation)
+- [Getting started tutorial](#getting-started-tutorial)
 - [Quick start](#quick-start)
 - [Configuration](#configuration)
 - [API reference](#api-reference)
 - [Benchmark results](#benchmark-results)
 - [When to use (and when not to)](#when-to-use-and-when-not-to)
 - [Comparison with native materialized views](#comparison-with-native-materialized-views)
+- [Versioning](#versioning)
 - [Development](#development)
 - [Contributing](#contributing)
 
@@ -69,15 +83,19 @@ flowchart TB
         W["INSERT / UPDATE / DELETE on depends_on model"]
         DT["DependencyTrackable after_*_commit callbacks"]
         DR["DependencyRegistry.publish_write_change!"]
-        MS["MaintenanceDeltaBuilder + MaintenanceStore"]
+        MS["MaintenanceDeltaBuilder / SummaryDeltaBuilder + MaintenanceStore"]
         RS[RefreshScheduler]
-        AR["AsyncRefresher or ActiveJob"]
-        IM["IncrementalMaintainer in-place partition merge"]
-        W --> DT --> DR --> MS --> RS --> AR --> IM
+        AR["AsyncRefresher or RefreshJob"]
+        RFR["Refresher dispatch"]
+        DM["DeltaMaintainer — signed summary deltas (distributive views)"]
+        IM["IncrementalMaintainer — scoped delete + re-aggregate (fallback)"]
+        W --> DT --> DR --> MS --> RS --> AR --> RFR
+        RFR --> DM
+        RFR --> IM
     end
 
-    subgraph bootstrap ["Bootstrap once"]
-        RF["Refresher — RelationCacheWriter + atomic swap"]
+    subgraph bootstrap ["Bootstrap once (explicit rebuild!)"]
+        RF["Refresher — RelationCacheWriter INSERT … SELECT + atomic swap"]
     end
 
     subgraph reads ["Read path — always fast"]
@@ -88,14 +106,17 @@ flowchart TB
 
     subgraph meta [Metadata]
         MD[("ar_materialized_view_metadata")]
+        DM --> CT
         IM --> CT
+        DM --> MD
         IM --> MD
         MS --> MD
         RF --> CT
         RF --> MD
     end
 
-    IM -.->|"updates affected partitions"| CT
+    DM -.->|"applies partition deltas in place"| CT
+    IM -.->|"re-aggregates affected partitions"| CT
     RF -.->|"initial snapshot"| CT
 ```
 
@@ -121,11 +142,14 @@ flowchart TB
 | `AsyncRefresher` | Debounced in-process background maintenance (tests: `flush!`) |
 | `RefreshJob` | Optional ActiveJob wrapper for production workers |
 | `ViewDefinition` | Inspects source relations for `GROUP BY` maintenance keys |
-| `MaintenanceDeltaBuilder` | Maps ActiveRecord change payloads to affected partition keys |
-| `MaintenanceStore` | Persists pending maintenance scope in metadata |
-| `IncrementalMaintainer` | Hot-path partition delete + re-aggregate in existing cache table |
-| `Refresher` | Orchestrates bootstrap/full refresh and incremental maintenance |
-| `RelationCacheWriter` | Materializes relation rows; atomic table swap on full refresh |
+| `AggregateAnalysis` | Classifies a view's aggregates; decides if it is summary-delta maintainable |
+| `MaintenanceDeltaBuilder` | Maps ActiveRecord change payloads to affected partition keys (scoped recompute) |
+| `SummaryDeltaBuilder` / `SummaryDelta` | Compute and accumulate signed per-partition aggregate deltas (distributive views) |
+| `MaintenanceStore` | Persists pending maintenance (delta or scope) in metadata |
+| `DeltaMaintainer` | Hot path for distributive views: applies summary deltas in place, no base re-read |
+| `IncrementalMaintainer` | Fallback hot path: partition delete + re-aggregate in the existing cache table |
+| `Refresher` | Orchestrates explicit bootstrap/full refresh and dispatches incremental maintenance |
+| `RelationCacheWriter` | Materializes the relation via `INSERT … SELECT`; atomic table swap on full refresh |
 | `QueryExpressions` | Portable Arel helpers (`sum_as`, `count_distinct_as`, …) for view definitions |
 | `Metadata` | Tracks `dirty`, `maintenance_payload`, `last_refreshed_at`, `row_count`, errors |
 
@@ -182,8 +206,8 @@ This gem applies decades of materialized-view and incremental-maintenance resear
 - **Dependency tracking** — `depends_on` models; ActiveRecord commit callbacks detect writes
 - **Metadata table** — `last_refreshed_at`, `dirty`, `row_count`, `refresh_duration_ms`, errors
 - **Staleness safety net** — optional `max_staleness` + rake tasks for cron-driven refresh
-- **Rails generators** — `activerecord_materialized:install`, `activerecord_materialized:view`
-- **Rake tasks** — `materialized:refresh_all`, `materialized:refresh_stale`
+- **Rails generators** — `activerecord_materialized:install`, `:view`, and `:migration` (cache-table migration inferred from the source relation)
+- **Rake tasks** — `materialized:refresh_all`, `:refresh_stale`, `:rebuild`, `:verify`, `:warm_up`
 - **Benchmark suite** — JOB-schema SQLite database with multi-second analytical queries
 
 ---
@@ -196,7 +220,7 @@ This gem applies decades of materialized-view and incremental-maintenance resear
 | **`depends_on` is required** | The gem cannot infer dependencies from a relation. Declare every model (or table) whose writes should trigger refresh. Prefer model classes (`depends_on LineItem`) so commit callbacks are wired automatically. |
 | **Maintenance scope** | Partition keys are taken from ActiveRecord change payloads when possible (`create`/`update`/`destroy` with equality on `GROUP BY` columns). Unbounded writes widen to all partitions (in-place, still no DDL). |
 | **Non-aggregate views** | Views without `GROUP BY` fall back to full refresh (`refresh_mode :full` or atomic swap). Join-heavy maintenance (Larson & Zhou) is not automatic yet. |
-| **Full refresh escape hatch** | `refresh_mode :full` or `refresh!(force: true)` rebuilds via atomic swap — use for recovery or non-maintainable views. |
+| **Full refresh escape hatch** | `rebuild!(confirm: true)` (or `refresh_mode :full`) rebuilds via atomic swap — use for recovery or non-maintainable views. `refresh!` is always incremental and never rebuilds. |
 | **Table-name-only `depends_on`** | Symbol/string table names work, but refresh-on-write requires a resolvable ActiveRecord model for that table. Raw SQL writes bypass callbacks and will not trigger refresh. |
 | **SQLite vs MySQL in dev** | The benchmark uses SQLite. Production behavior is adapter-agnostic, but test atomic swap on your target database. |
 | **In-process async default** | Default `refresh_dispatcher: :async` uses a background thread. **Use ActiveJob in production** so refresh work runs on job workers, not Puma threads. |
@@ -220,6 +244,14 @@ Install the metadata migration:
 bin/rails generate activerecord_materialized:install
 bin/rails db:migrate
 ```
+
+---
+
+## Getting started tutorial
+
+The **[Getting started tutorial](docs/getting-started.md)** is the recommended first read: a hands-on walkthrough that goes from `bundle install` to a view that refreshes itself on write — defining a view, reading through before it's built, building it, querying it, and watching background maintenance update it. Every example in it is executed by the test suite (`spec/docs/getting_started_tutorial_spec.rb`), so the code and the numbers are guaranteed to work.
+
+The condensed reference version follows below.
 
 ---
 
@@ -324,6 +356,7 @@ ActiveRecord::Materialized.configure do |config|
   config.refresh_dispatcher = :active_job   # :async for in-process thread
   config.refresh_queue_name = :materialized_views
   config.default_max_staleness = 12.hours
+  config.default_cold_read_strategy = :read_through  # :serve_stale or :raise
   config.atomic_swap_refresh = true
   config.metadata_table_name = "ar_materialized_view_metadata"
 end
@@ -442,6 +475,18 @@ See [benchmark/DATA.md](benchmark/DATA.md) for dataset scales and setup details.
 | Incremental refresh | Limited (IVM extensions) | ✅ default partition-local IVM for `GROUP BY` views |
 | Atomic swap during refresh | ✅ CONCURRENTLY | ✅ table rename |
 | Database portability | PostgreSQL only | ✅ any ActiveRecord adapter |
+
+---
+
+## Versioning
+
+This gem follows [Semantic Versioning](https://semver.org/). Given `MAJOR.MINOR.PATCH`:
+
+- **MAJOR** — incompatible public-API changes (DSL macros, configuration keys, the `View` query surface).
+- **MINOR** — backward-compatible features.
+- **PATCH** — backward-compatible bug fixes.
+
+Until `1.0.0`, the API may still change between minor releases; pin a version if you depend on it. Every change is recorded in [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
