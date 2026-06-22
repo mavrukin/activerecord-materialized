@@ -38,8 +38,7 @@ module ActiveRecord
           view_class.metadata.warm?
         end
 
-        # A view is materialized once it has been explicitly rebuilt/warmed and
-        # its cache table exists. Only then are reads served from the cache;
+        # Reads are served from the cache only once warmed and the table exists;
         # otherwise they fall through to the cold-read path.
         sig { returns(T::Boolean) }
         def materialized?
@@ -66,8 +65,7 @@ module ActiveRecord
           view_class.connection.data_source_exists?(view_class.table_name)
         end
 
-        # Incremental maintenance only — never builds a cold view or scans all
-        # base data. Safe to call from reads and background workers.
+        # Incremental maintenance only — never scans all base data.
         sig { returns(RefreshResult) }
         def refresh!
           Refresher.new(view_class).refresh!
@@ -78,8 +76,8 @@ module ActiveRecord
           refresh! if materialized? && stale?
         end
 
-        # Explicit, intentional full materialization — the only path that scans
-        # all base data. Guarded by `confirm:` so it is never fired by accident.
+        # The only path that scans all base data; `confirm:` guards against
+        # firing a full materialization by accident.
         sig { params(confirm: T::Boolean).returns(RefreshResult) }
         def rebuild!(confirm: false)
           unless confirm
@@ -117,17 +115,13 @@ module ActiveRecord
 
         private
 
-        # The relation reads are served from: the cache table when the view is
-        # materialized, otherwise the cold-read path (see ColdRead).
         sig { returns(T.untyped) }
         def read_scope
           materialized? ? cache_scope : cold_scope
         end
 
-        # Per-partition fast path for keyed reads. On a cold view whose touched
-        # partitions are all already materialized, serve from the cache;
-        # otherwise read through and enqueue maintenance so the partitions become
-        # fast on the next read (the populate-on-read behavior).
+        # Per-partition fast path for keyed reads: serve fresh partitions from the
+        # cache, otherwise read through and enqueue maintenance (populate-on-read).
         sig { params(args: T::Array[T.untyped]).returns(T.untyped) }
         def partition_scope(args)
           return cache_scope if materialized?

@@ -6,9 +6,8 @@ module ActiveRecord
     module CacheTableSchema
       extend T::Sig
 
-      # An inferred cache-table column: its name (from the relation projection)
-      # and migration column type (:integer, :decimal, :boolean, :datetime, or
-      # :string).
+      # An inferred cache-table column: name from the relation projection, type
+      # one of :integer, :decimal, :boolean, :datetime, :string.
       class ColumnDefinition < T::Struct
         const :name, String
         const :type, Symbol
@@ -29,9 +28,8 @@ module ActiveRecord
         build_table!(view_class.connection, table_name, relation)
       end
 
-      # The inferred MV columns: names from the relation's projection, types from
-      # a one-row probe (value-based). The single source of truth shared by
-      # runtime table creation, migration generation, and drift verification.
+      # The inferred MV columns (names from the projection, types from a one-row
+      # probe). Shared by table creation, migration generation, and drift checks.
       sig { params(connection: Connection, relation: ::ActiveRecord::Relation).returns(T::Array[ColumnDefinition]) }
       def column_definitions(connection, relation)
         result = connection.exec_query(relation.limit(1).to_sql)
@@ -43,8 +41,6 @@ module ActiveRecord
 
       sig { params(connection: Connection, table_name: String, relation: ::ActiveRecord::Relation).void }
       def build_table!(connection, table_name, relation)
-        # Probe one row for column names and value-based type inference. Never
-        # buffer the whole result set just to learn the schema.
         definitions = column_definitions(connection, relation)
         connection.create_table(table_name) do |table|
           definitions.each { |definition| T.unsafe(table).public_send(definition.type, definition.name) }

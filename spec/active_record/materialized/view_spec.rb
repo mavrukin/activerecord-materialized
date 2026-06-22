@@ -4,9 +4,7 @@ require "spec_helper"
 
 RSpec.describe ActiveRecord::Materialized::View do
   let(:view_class) do
-    Class.new(described_class) do
-      self.table_name = "mv_item_counts"
-      materialized_from { ViewSources.item_count_by_category }
+    define_view("mv_item_counts", :item_count_by_category) do
       depends_on :items
       max_staleness 1.hour
     end
@@ -14,9 +12,7 @@ RSpec.describe ActiveRecord::Materialized::View do
 
   before do
     ActiveRecord::Materialized::DependencyRegistry.reset!
-    Item.delete_all
-    Item.create!(category: "books", amount: 1)
-    Item.create!(category: "games", amount: 2)
+    seed_items(["books", 1], ["games", 2])
     view_class.rebuild!(confirm: true)
   end
 
@@ -51,10 +47,7 @@ RSpec.describe ActiveRecord::Materialized::View do
   end
 
   it "supports callable source definitions" do
-    dynamic_view = Class.new(described_class) do
-      self.table_name = "mv_dynamic"
-      materialized_from { ViewSources.total_item_count }
-    end
+    dynamic_view = define_view("mv_dynamic", :total_item_count)
 
     dynamic_view.rebuild!(confirm: true)
     expect(dynamic_view.pick(:total)).to eq(2)
@@ -62,9 +55,7 @@ RSpec.describe ActiveRecord::Materialized::View do
 
   describe ".warm_up!" do
     let(:warm_view) do
-      Class.new(described_class) do
-        self.table_name = "mv_warmup_items"
-        materialized_from { ViewSources.item_count_by_category }
+      define_view("mv_warmup_items", :item_count_by_category) do
         refresh_on_change :manual
         warm_up { [where(category: "books")] }
       end
@@ -83,10 +74,7 @@ RSpec.describe ActiveRecord::Materialized::View do
     end
 
     it "is a no-op when no warm_up queries are configured" do
-      plain = Class.new(described_class) do
-        self.table_name = "mv_no_warmup"
-        materialized_from { ViewSources.item_count_by_category }
-      end
+      plain = define_view("mv_no_warmup", :item_count_by_category)
 
       expect(plain.resolved_warm_up_queries).to eq([])
       expect { plain.warm_up! }.not_to raise_error

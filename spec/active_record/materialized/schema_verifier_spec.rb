@@ -5,17 +5,9 @@ require "spec_helper"
 RSpec.describe ActiveRecord::Materialized::SchemaVerifier do
   subject(:verifier) { described_class.new(view_class) }
 
-  let(:view_class) do
-    Class.new(ActiveRecord::Materialized::View) do
-      self.table_name = "mv_verify_items"
-      materialized_from { ViewSources.item_count_by_category }
-    end
-  end
+  let(:view_class) { define_view("mv_verify_items", :item_count_by_category) }
 
-  before do
-    Item.delete_all
-    Item.create!(category: "books", amount: 1)
-  end
+  before { seed_items(["books", 1]) }
 
   it "is a no-op for an unprovisioned view" do
     expect(view_class.table_exists?).to be(false)

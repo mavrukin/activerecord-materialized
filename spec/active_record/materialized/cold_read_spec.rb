@@ -3,19 +3,11 @@
 require "spec_helper"
 
 RSpec.describe ActiveRecord::Materialized::ColdRead do
-  let(:view_class) do
-    Class.new(ActiveRecord::Materialized::View) do
-      self.table_name = "mv_cold_read_items"
-      materialized_from { ViewSources.item_count_by_category }
-    end
-  end
+  let(:view_class) { define_view("mv_cold_read_items", :item_count_by_category) }
 
   before do
     ActiveRecord::Materialized::DependencyRegistry.reset!
-    Item.delete_all
-    Item.create!(category: "books", amount: 1)
-    Item.create!(category: "books", amount: 2)
-    Item.create!(category: "games", amount: 3)
+    seed_items(["books", 1], ["books", 2], ["games", 3])
   end
 
   describe "rebuild!" do

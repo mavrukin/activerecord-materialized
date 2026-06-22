@@ -3,19 +3,10 @@
 require "spec_helper"
 
 RSpec.describe ActiveRecord::Materialized::IncrementalMaintainer do
-  let(:view_class) do
-    Class.new(ActiveRecord::Materialized::View) do
-      self.table_name = "mv_incremental_sales_summary"
-
-      materialized_from { ViewSources.sales_by_category }
-    end
-  end
+  let(:view_class) { define_view("mv_incremental_sales_summary", :sales_by_category) }
 
   before do
-    Item.delete_all
-    Item.create!(category: "books", amount: 10)
-    Item.create!(category: "books", amount: 5)
-    Item.create!(category: "games", amount: 20)
+    seed_items(["books", 10], ["books", 5], ["games", 20])
     ActiveRecord::Materialized::Refresher.new(view_class).rebuild!
   end
 

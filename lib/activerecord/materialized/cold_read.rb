@@ -3,11 +3,10 @@
 
 module ActiveRecord
   module Materialized
-    # Resolves the relation a read is served from when a view is not yet
-    # materialized, according to its cold_read strategy. The read-through scope
-    # wraps the live source query as a derived table aliased to the cache table
-    # name, so arbitrary where/order/limit/count keep working against the same
-    # column names the materialized table would expose.
+    # The relation a read is served from when a view is not yet materialized,
+    # per its cold_read strategy. Read-through wraps the live source as a derived
+    # table aliased to the cache table name, so where/order/limit/count keep
+    # working against the same column names.
     class ColdRead
       extend T::Sig
 
@@ -44,8 +43,7 @@ module ActiveRecord
         Arel.sql("(#{@view_class.resolved_source.to_sql}) #{@view_class.quoted_table_name}")
       end
 
-      # Provisions an empty cache table (schema only, no data) so a cold view has
-      # column metadata for read-through. Cheap DDL — it never populates rows.
+      # Provisions an empty cache table for column metadata — cheap DDL, no data.
       sig { void }
       def ensure_skeleton!
         return if @view_class.table_exists?

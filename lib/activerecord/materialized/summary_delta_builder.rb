@@ -3,11 +3,9 @@
 
 module ActiveRecord
   module Materialized
-    # Computes the SummaryDelta a single write contributes to a delta-maintainable
-    # view. A write subtracts its "before" snapshot and adds its "after" snapshot,
-    # which uniformly handles inserts (+after), deletes (-before), in-place value
-    # updates (net on one partition), and group-key changes (move between
-    # partitions).
+    # The SummaryDelta a single write contributes. Subtracting the "before"
+    # snapshot and adding the "after" uniformly handles inserts, deletes, in-place
+    # updates, and group-key changes (a move between partitions).
     class SummaryDeltaBuilder
       extend T::Sig
 

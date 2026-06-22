@@ -3,9 +3,8 @@
 
 module ActiveRecord
   module Materialized
-    # One row per materialized partition of a cold view. A row's presence means
-    # that partition has been materialized into the cache table and is current
-    # ("fresh"); its absence means the partition is not yet materialized.
+    # One row per fresh partition of a cold view; presence means the partition is
+    # materialized and current, absence means it is not.
     class PartitionRecord < ::ActiveRecord::Base
       extend T::Sig
 

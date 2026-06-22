@@ -14,7 +14,6 @@ module ActiveRecord
         return if view_class.nil?
         return unless view_class.dirty?
 
-        # Incremental maintenance only; never builds a cold view.
         view_class.refresh!
       end
     end

@@ -4,11 +4,7 @@ require "spec_helper"
 
 RSpec.describe ActiveRecord::Materialized::DependencyRegistry do
   let(:view_class) do
-    Class.new(ActiveRecord::Materialized::View) do
-      self.table_name = "mv_dependency_registry"
-      materialized_from { ViewSources.item_count_by_category }
-      depends_on :items
-    end
+    define_view("mv_dependency_registry", :item_count_by_category) { depends_on :items }
   end
 
   before do
@@ -26,11 +22,7 @@ RSpec.describe ActiveRecord::Materialized::DependencyRegistry do
   end
 
   it "registers dependencies declared as model classes" do
-    model_dependent = Class.new(ActiveRecord::Materialized::View) do
-      self.table_name = "mv_model_dependency"
-      materialized_from { ViewSources.item_count_by_category }
-      depends_on Item
-    end
+    model_dependent = define_view("mv_model_dependency", :item_count_by_category) { depends_on Item }
 
     expect(described_class.views_for_table("items")).to include(model_dependent)
   end

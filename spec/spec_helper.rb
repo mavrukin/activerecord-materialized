@@ -12,11 +12,14 @@ require "active_support/time"
 
 require "activerecord/materialized"
 require_relative "support/view_sources"
+require_relative "support/materialized_view_helpers"
 
 class Item < ActiveRecord::Base
 end
 
 RSpec.configure do |config|
+  config.include MaterializedViewHelpers
+
   config.around do |example|
     Time.use_zone("UTC") { example.run }
   end

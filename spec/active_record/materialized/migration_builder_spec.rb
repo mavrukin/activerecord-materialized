@@ -6,12 +6,7 @@ require "erb"
 RSpec.describe ActiveRecord::Materialized::MigrationBuilder do
   subject(:builder) { described_class.new(view_class) }
 
-  let(:view_class) do
-    Class.new(ActiveRecord::Materialized::View) do
-      self.table_name = "mv_orders_summary"
-      materialized_from { ViewSources.sales_by_category }
-    end
-  end
+  let(:view_class) { define_view("mv_orders_summary", :sales_by_category) }
 
   let(:template_path) do
     File.expand_path(
@@ -22,10 +17,7 @@ RSpec.describe ActiveRecord::Materialized::MigrationBuilder do
 
   let(:rendered_migration) { ERB.new(File.read(template_path), trim_mode: "-").result(binding) }
 
-  before do
-    Item.delete_all
-    Item.create!(category: "books", amount: 10)
-  end
+  before { seed_items(["books", 10]) }
 
   it "names the migration after the cache table" do
     expect(builder.migration_class_name).to eq("CreateMvOrdersSummary")

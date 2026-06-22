@@ -19,8 +19,7 @@ module ActiveRecord
           model_class.instance_variable_set(TRACKABLE_FLAG, true)
         end
 
-        # Invoked from the model commit callbacks below; `record` is the
-        # committed instance whose write should refresh dependent views.
+        # Invoked from the model commit callbacks; `record` is the committed instance.
         sig { params(record: ::ActiveRecord::Base, operation: WriteChange::Operation).void }
         def publish(record, operation)
           DependencyRegistry.publish_write_change!(WriteChange.from_record(record, operation))

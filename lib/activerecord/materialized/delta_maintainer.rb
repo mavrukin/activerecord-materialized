@@ -3,10 +3,9 @@
 
 module ActiveRecord
   module Materialized
-    # Applies an accumulated SummaryDelta to a delta-maintainable view's cache
-    # table without re-reading base rows: new partitions are inserted, existing
-    # ones incremented in place (NULL-safe for SUM), and partitions whose row
-    # count reaches zero are deleted so the cache matches the raw GROUP BY.
+    # Applies a SummaryDelta to a delta-maintainable view's cache table without
+    # re-reading base rows: new partitions inserted, existing ones incremented in
+    # place (NULL-safe for SUM), and emptied partitions deleted.
     class DeltaMaintainer
       extend T::Sig
 
@@ -48,17 +47,14 @@ module ActiveRecord
 
       sig { params(key_tuple: SummaryDelta::KeyTuple, column_deltas: T::Hash[String, Numeric]).void }
       def insert_partition(key_tuple, column_deltas)
-        # A new partition started empty, so the accumulated deltas are its
-        # absolute aggregate values. Aggregates with no (or a pruned-zero) delta
-        # default to 0 rather than NULL — the partition has rows, and a
-        # distributive aggregate over them is numeric (e.g. SUM of a single 0).
+        # A new partition's deltas are its absolute values; aggregates with no
+        # delta default to 0, not NULL, since the partition has rows.
         defaults = @analysis.aggregate_columns.to_h { |column| [column.name, 0] }
         row = group_columns.zip(key_tuple).to_h.merge(defaults).merge(column_deltas)
         T.unsafe(@view_class).create!(row)
       end
 
-      # Adds each delta to the partition's current value, treating a NULL SUM (a
-      # partition whose values were all nil) as zero for the first contribution.
+      # Adds each delta to the current value, treating a NULL SUM as zero.
       sig { params(existing: T.untyped, column_deltas: T::Hash[String, Numeric]).void }
       def add_deltas!(existing, column_deltas)
         new_values = column_deltas.to_h { |column, amount| [column, (existing[column] || 0) + amount] }

@@ -103,8 +103,9 @@ module ActiveRecord
         materialized_view.view_definition.partition_scope_on(view_class, key_tuples).delete_all
       end
 
-      # Populates the cache table entirely in the database with INSERT ... SELECT
-      # over the source query — the result set never crosses into Ruby memory.
+      # INSERT ... SELECT entirely in the database; the result set never crosses
+      # into Ruby. Cache columns share the relation's projection order, so the
+      # SELECT list maps onto them positionally.
       sig { params(relation: ::ActiveRecord::Relation).void }
       def insert_rows!(relation)
         columns = view_class.column_names - ["id"]
@@ -115,11 +116,11 @@ module ActiveRecord
 
       sig { params(relation: ::ActiveRecord::Relation, columns: T::Array[String]).returns(String) }
       def insert_select_sql(relation, columns)
-        connection = T.unsafe(view_class.connection)
-        quoted = columns.map { |column| connection.quote_column_name(column) }.join(", ")
-        target = connection.quote_table_name(view_class.table_name)
-        source = connection.quote_table_name("mv_source")
-        "INSERT INTO #{target} (#{quoted}) SELECT #{quoted} FROM (#{relation.to_sql}) #{source}"
+        manager = Arel::InsertManager.new
+        manager.into(view_class.arel_table)
+        T.unsafe(manager).columns.concat(columns.map { |name| view_class.arel_table[name] })
+        manager.select(Arel.sql(relation.to_sql))
+        manager.to_sql
       end
 
       sig { params(table_name: String).returns(T.class_of(::ActiveRecord::Base)) }

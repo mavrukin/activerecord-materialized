@@ -35,8 +35,7 @@ module ActiverecordMaterialized
       @builder ||= T.let(build_builder, T.nilable(::ActiveRecord::Materialized::MigrationBuilder))
     end
 
-    # Resolve the view via the gem's own registry (populated by eager-loading the
-    # app's models) rather than constantize, so the lookup stays analyzable.
+    # Resolve via the registry (after eager-load) rather than constantize.
     sig { returns(::ActiveRecord::Materialized::MigrationBuilder) }
     def build_builder
       T.unsafe(::Rails).application.eager_load!

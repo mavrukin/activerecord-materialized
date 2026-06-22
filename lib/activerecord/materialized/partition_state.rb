@@ -3,11 +3,9 @@
 
 module ActiveRecord
   module Materialized
-    # Tracks which partitions of a *cold* view have been materialized into the
-    # cache table ("fresh"). Warm views are fully materialized and ignore this;
-    # cold views are partially materialized, so a read consults the fresh set to
-    # decide whether a partition is served from the cache or read through to the
-    # source.
+    # Tracks which partitions of a cold view have been materialized ("fresh") so
+    # a read can decide whether a partition is served from the cache or read
+    # through to the source. Warm views are fully materialized and ignore this.
     class PartitionState
       extend T::Sig
 
@@ -51,10 +49,8 @@ module ActiveRecord
         scope.delete_all
       end
 
-      # Extracts the partition key tuples a query touches, or nil when the scope
-      # cannot be determined (no group-key filter, extra columns, raw SQL, …).
-      # Only an exact match on the GROUP BY columns qualifies for the per-
-      # partition fast path.
+      # The partition key tuples a query touches, or nil unless the conditions are
+      # an exact match on the GROUP BY columns (the only case the fast path serves).
       sig { params(view_class: ViewClass, args: T::Array[T.untyped]).returns(T.nilable(T::Array[KeyTuple])) }
       def self.keys_from(view_class, args)
         conditions = single_hash(args)
@@ -75,8 +71,6 @@ module ActiveRecord
         conditions.is_a?(Hash) ? conditions : nil
       end
 
-      # The value lists for each GROUP BY column, or nil unless the conditions
-      # name exactly the GROUP BY columns (an exact partition lookup).
       sig do
         params(conditions: T::Hash[T.untyped, T.untyped], group_keys: T::Array[String])
           .returns(T.nilable(T::Array[T::Array[String]]))

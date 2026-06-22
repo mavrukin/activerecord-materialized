@@ -3,11 +3,9 @@
 
 module ActiveRecord
   module Materialized
-    # Supplies the data a generated migration needs to provision a view's
-    # (empty) cache table: the table name, migration class name, target Rails
-    # migration version, and the columns/types inferred from the source
-    # relation. The migration file itself is produced by Rails' generator
-    # tooling (migration_template + the ERB template), not by string building.
+    # The data a generated migration needs to provision a view's empty cache
+    # table: table name, migration class name, target version, and inferred
+    # columns/types. The file itself is produced by Rails' generator tooling.
     class MigrationBuilder
       extend T::Sig
 

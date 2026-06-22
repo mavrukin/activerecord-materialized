@@ -32,8 +32,7 @@ module ActiveRecord
           views.values
         end
 
-        # Incremental maintenance pass over every registered view (no full
-        # builds). Use rebuild_all! for an intentional full materialization.
+        # Incremental pass over every registered view; rebuild_all! for a full one.
         sig { returns(T::Array[RefreshResult]) }
         def refresh_all!
           all.map(&:refresh!)

@@ -2,40 +2,13 @@
 
 require "spec_helper"
 
-module RegistrySpecHelpers
-  module_function
-
-  def register_refresh_all_views!(refreshed)
-    Class.new(ActiveRecord::Materialized::View) do
-      self.table_name = "mv_refresh_all_a"
-      materialized_from { ViewSources.item_id_sample }
-      define_singleton_method(:refresh!) do |**_|
-        refreshed << name
-        nil
-      end
-    end
-
-    Class.new(ActiveRecord::Materialized::View) do
-      self.table_name = "mv_refresh_all_b"
-      materialized_from { ViewSources.item_amount_sample }
-      define_singleton_method(:refresh!) do |**_|
-        refreshed << name
-        nil
-      end
-    end
-  end
-end
-
 RSpec.describe ActiveRecord::Materialized::Registry do
   after do
     described_class.send(:reset!)
   end
 
   it "registers materialized view subclasses" do
-    view_class = Class.new(ActiveRecord::Materialized::View) do
-      self.table_name = "mv_registry_test"
-      materialized_from { ViewSources.item_id_sample }
-    end
+    view_class = define_view("mv_registry_test", :item_id_sample)
 
     expect(described_class.all).to include(view_class)
     expect(described_class.find(view_class.view_key)).to eq(view_class)
@@ -43,7 +16,9 @@ RSpec.describe ActiveRecord::Materialized::Registry do
 
   it "refreshes all registered views" do
     refreshed = []
-    RegistrySpecHelpers.register_refresh_all_views!(refreshed)
+    recording = ->(klass) { klass.define_singleton_method(:refresh!) { |**_| refreshed << name } }
+    recording.call(define_view("mv_refresh_all_a", :item_id_sample))
+    recording.call(define_view("mv_refresh_all_b", :item_amount_sample))
 
     described_class.refresh_all!
     expect(refreshed.size).to eq(2)

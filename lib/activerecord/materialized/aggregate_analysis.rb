@@ -3,25 +3,20 @@
 
 module ActiveRecord
   module Materialized
-    # Classifies a view's projected aggregates by inspecting the source
-    # relation's Arel, and decides whether the view can be maintained by
-    # applying signed deltas (summary-delta IVM) rather than re-aggregating the
-    # base rows of an affected partition.
-    #
-    # A view is delta-maintainable when it is a single-table GROUP BY with no
-    # HAVING whose aggregates are all distributive (SUM / COUNT / COUNT(*)) over
-    # plain columns, and it carries a trustworthy row count (COUNT(*) or COUNT of
-    # a NOT NULL column) so emptied partitions can be detected. Anything else
-    # (AVG, MIN, MAX, COUNT(DISTINCT), joins, HAVING, expressions) falls back to
-    # scoped recompute, which is always correct.
+    # Decides whether a view can be maintained by applying signed deltas
+    # (summary-delta IVM) instead of re-aggregating a partition's base rows. True
+    # only for a single-table GROUP BY without HAVING whose aggregates are all
+    # distributive (SUM/COUNT/COUNT(*)) and which carries a trustworthy row count
+    # so emptied partitions can be detected; everything else falls back to scoped
+    # recompute, which is always correct.
     class AggregateAnalysis
       extend T::Sig
 
       class Column < T::Struct
         const :name, String
-        const :function, Symbol # :sum, :count, :count_star, :avg, :min, :max, :count_distinct, :other
+        const :function, Symbol
         const :attribute, T.nilable(String)
-        const :counts_rows, T::Boolean, default: false # a trustworthy per-partition row count
+        const :counts_rows, T::Boolean, default: false
       end
 
       sig { params(relation: ::ActiveRecord::Relation).void }
@@ -45,8 +40,6 @@ module ActiveRecord
         aggregate_columns.any? && aggregate_columns.all? { |column| distributive?(column) }
       end
 
-      # The column whose value reflects the partition's base-row count, used to
-      # detect when a partition becomes empty.
       sig { returns(T.nilable(Column)) }
       def row_count_column
         aggregate_columns.find(&:counts_rows)
@@ -82,9 +75,8 @@ module ActiveRecord
       sig { params(column: Column).returns(T::Boolean) }
       def distributive?(column)
         case column.function
-        # A SUM over a nullable column can be NULL (all values nil), which a
-        # zero delta can't distinguish from 0, so only NOT NULL sums are
-        # delta-maintainable. COUNT counts non-nulls and is always numeric.
+        # A SUM over a nullable column can be NULL, which a zero delta can't
+        # distinguish from 0, so only NOT NULL sums are delta-maintainable.
         when :sum then !column.attribute.nil? && not_null_column?(column.attribute)
         when :count then !column.attribute.nil?
         when :count_star then true
