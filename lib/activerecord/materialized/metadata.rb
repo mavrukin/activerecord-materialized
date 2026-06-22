@@ -16,14 +16,25 @@ module ActiveRecord
       sig { params(view_class: ViewClass).void }
       def initialize(view_class)
         @view_class = view_class
+        @schema_ensured = T.let(false, T::Boolean)
       end
 
-      # Single entry point for the metadata row; every accessor funnels through
-      # here so the metadata table is ensured exactly once per operation.
+      # Single entry point for the metadata row. The schema is provisioned once
+      # per instance: ensuring it on every access re-runs introspection and
+      # resets column information, which thrashes the schema cache and makes
+      # high-write workloads quadratic.
       sig { returns(MetadataRecord) }
       def record
-        Schema.ensure_table!(view_class)
+        ensure_schema!
         MetadataRecord.find_or_initialize_by(view_name: view_class.view_key)
+      end
+
+      sig { void }
+      def ensure_schema!
+        return if @schema_ensured
+
+        Schema.ensure_table!(view_class)
+        @schema_ensured = true
       end
 
       sig { returns(T.nilable(Timestamp)) }

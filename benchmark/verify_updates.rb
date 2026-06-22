@@ -71,6 +71,14 @@ BenchmarkSupport::DatasetInfo.print_report(stats)
 view = GenderPairingStatsView
 view.metadata.clear_maintenance_payload!
 
+# Drive maintenance explicitly. The view refreshes :async with a zero debounce,
+# so without pausing, the bulk insert below would schedule (and the in-process
+# refresher would start, then cancel) a background refresh for every committed
+# row — thrashing threads and pegging the CPU (issue #40). Pausing lets the
+# writes accumulate pending scope; the script refreshes once, deterministically,
+# at step 5.
+ActiveRecord::Materialized::AsyncRefresher.paused = true
+
 connection = ActiveRecord::Base.connection
 bootstrap_ms = nil
 
