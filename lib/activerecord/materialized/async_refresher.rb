@@ -38,9 +38,8 @@ module ActiveRecord
           end
         end
 
-        # When paused, enqueued refreshes accumulate as pending and run only on
-        # an explicit flush! — no background timer fires. Useful for draining at
-        # a controlled checkpoint (and for deterministic tests).
+        # When paused, refreshes accumulate and run only on an explicit flush! —
+        # no background timer fires.
         sig { params(value: T::Boolean).void }
         def paused=(value)
           @paused = T.let(value, T.nilable(T::Boolean))
@@ -94,7 +93,6 @@ module ActiveRecord
           views.each do |view_class|
             next unless view_class.dirty?
 
-            # Incremental maintenance only; never builds a cold view.
             view_class.refresh!
           end
         end

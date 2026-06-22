@@ -3,10 +3,8 @@
 
 module ActiveRecord
   module Materialized
-    # Verifies that a view's provisioned cache table still matches the columns
-    # its source relation projects. Raises on drift (e.g. the definition gained
-    # or dropped a column but no migration was run) — it never alters the table
-    # or rebuilds data.
+    # Raises when a provisioned cache table no longer matches the columns its
+    # source relation projects (drift); never alters the table or rebuilds data.
     class SchemaVerifier
       extend T::Sig
 
@@ -17,8 +15,7 @@ module ActiveRecord
         @view_class = view_class
       end
 
-      # No-op when the cache table has not been provisioned yet (a cold view that
-      # has never been migrated/built is not "drifted" — it is simply absent).
+      # An unprovisioned cache table is absent, not drifted, so this is a no-op.
       sig { void }
       def verify!
         return unless @view_class.table_exists?

@@ -13,9 +13,7 @@ RSpec.describe ActiveRecord::Materialized::ViewDefinition do
   end
 
   it "builds scoped maintenance relations for affected partitions" do
-    Item.delete_all
-    Item.create!(category: "books", amount: 10)
-    Item.create!(category: "games", amount: 20)
+    seed_items(["books", 10], ["games", 20])
 
     scoped = definition.partition_scope([["books"]])
     expect(scoped.map { |row| row.attributes["category"] }).to eq(["books"])

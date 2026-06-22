@@ -1,14 +1,10 @@
 # frozen_string_literal: true
 
-require "benchmark"
-
 require "spec_helper"
 
 RSpec.describe ActiveRecord::Materialized::View, ".refresh_on_change" do
   let(:view_class) do
-    Class.new(ActiveRecord::Materialized::View) do
-      self.table_name = "mv_refresh_on_change_items"
-      materialized_from { ViewSources.item_count_by_category }
+    define_view("mv_refresh_on_change_items", :item_count_by_category) do
       depends_on Item
       refresh_on_change :async
     end
@@ -19,9 +15,7 @@ RSpec.describe ActiveRecord::Materialized::View, ".refresh_on_change" do
     # Accumulate enqueued refreshes and run them only on flush!, so the
     # dirty/stale assertions don't race a background timer.
     ActiveRecord::Materialized::AsyncRefresher.paused = true
-    Item.delete_all
-    Item.create!(category: "books", amount: 1)
-    Item.create!(category: "games", amount: 2)
+    seed_items(["books", 1], ["games", 2])
     view_class.rebuild!(confirm: true)
   end
 
@@ -44,12 +38,14 @@ RSpec.describe ActiveRecord::Materialized::View, ".refresh_on_change" do
     expect(view_class.where(category: "books").pick(:item_count)).to eq(2)
   end
 
-  it "serves refreshed reads quickly after async dependency writes" do
-    ActiveRecord::Base.connection.execute("INSERT INTO items (category, amount) VALUES ('books', 5)")
+  it "keeps serving from the warm cache across async maintenance" do
+    Item.create!(category: "books", amount: 5)
     ActiveRecord::Materialized::AsyncRefresher.flush!
 
-    read_time = Benchmark.realtime { view_class.where(category: "books").pick(:item_count) }
-    expect(read_time).to be < 0.1
+    # Still materialized, so reads hit the cache (not read-through) and reflect
+    # the maintained value.
+    expect(view_class.materialized?).to be(true)
+    expect(view_class.where(category: "books").pick(:item_count)).to eq(2)
   end
 
   it "does not auto-refresh when strategy is manual" do

@@ -22,8 +22,7 @@ module ActiveRecord
           full_partition: delta.full_partition?
         )
 
-        # On a cold view the maintained partitions are now materialized, so a
-        # subsequent keyed read serves them from the cache.
+        # On a cold view the maintained partitions are now fresh.
         unless delta.full_partition? || view_class.materialized?
           PartitionState.new(view_class).mark_fresh!(delta.key_tuples)
         end

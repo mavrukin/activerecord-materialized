@@ -5,12 +5,7 @@ require "spec_helper"
 RSpec.describe ActiveRecord::Materialized::MaintenanceDeltaBuilder do
   subject(:builder) { described_class.new(change, ["category"]) }
 
-  let(:change) do
-    ActiveRecord::Materialized::WriteChange.from_record(
-      Item.new(category: "books", amount: 5),
-      :create
-    )
-  end
+  let(:change) { write_change(Item.new(category: "books", amount: 5), :create) }
 
   it "extracts partition keys from ActiveRecord create changes" do
     delta = builder.build

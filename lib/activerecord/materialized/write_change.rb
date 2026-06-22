@@ -5,9 +5,8 @@ module ActiveRecord
   module Materialized
     # A committed write to a dependency table, captured as full before/after
     # attribute snapshots (string-keyed). Snapshots are complete — not just the
-    # changed columns — so maintenance can determine the affected partition and
-    # compute aggregate deltas even when the GROUP BY key or a summed column did
-    # not change in the write.
+    # changed columns — so maintenance can compute deltas even when the GROUP BY
+    # key or a summed column did not change.
     class WriteChange
       extend T::Sig
 
@@ -44,16 +43,14 @@ module ActiveRecord
           new(table_name: table_name, operation: :update, before: old_attributes(record),
               after: stringify_keys(record.attributes))
         when :destroy
-          # attributes_in_database is emptied once the row is gone, so use the
-          # in-memory attributes to keep the destroyed row's values.
+          # attributes_in_database is emptied once the row is gone; use in-memory attributes.
           new(table_name: table_name, operation: :destroy, before: stringify_keys(record.attributes), after: {})
         else
           raise ArgumentError, "unsupported write operation: #{operation}"
         end
       end
 
-      # Full pre-update attributes: the current values with the changed columns
-      # reverted to their saved-change "before" values.
+      # Full pre-update attributes: current values with changed columns reverted.
       sig { params(record: ::ActiveRecord::Base).returns(Attributes) }
       def self.old_attributes(record)
         attributes = stringify_keys(record.attributes)

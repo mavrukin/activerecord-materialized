@@ -18,6 +18,7 @@ Example:
     depends_on :line_items
     max_staleness 12.hours
     # cold_read :read_through  # default; also :serve_stale or :raise
+    # warm_up { [where(region: "us")] }  # materialize hot partitions at deploy
   end
 
 Provision the (empty) cache table with a migration generated from the
@@ -30,9 +31,15 @@ Verify the cache tables still match their relations (e.g. in CI / on deploy):
 
   bin/rails materialized:verify
 
-Build the view once (the only full-scan path — never happens implicitly):
+Build the view once (the only full-scan path — never happens implicitly; runs
+in the database via INSERT ... SELECT):
 
   SalesSummary.rebuild!(confirm: true)
+
+Or warm just the hot partitions at deploy time (leaving the rest to read
+through on demand):
+
+  bin/rails materialized:warm_up
 
 Until a view is built, reads transparently fall through to the source query
 (cold_read :read_through). After it is built, writes to depends_on tables

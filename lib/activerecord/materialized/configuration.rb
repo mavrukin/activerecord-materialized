@@ -33,9 +33,8 @@ module ActiveRecord
       sig { returns(Symbol) }
       attr_accessor :refresh_queue_name
 
-      # How a read against a not-yet-materialized (cold) view behaves:
-      # :read_through (serve from the source relation), :serve_stale (serve the
-      # cache as-is), or :raise.
+      # Cold-read behavior: :read_through (serve from source), :serve_stale
+      # (serve the cache as-is), or :raise.
       sig { returns(Symbol) }
       attr_accessor :default_cold_read_strategy
 

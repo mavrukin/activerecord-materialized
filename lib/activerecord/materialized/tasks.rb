@@ -11,7 +11,8 @@ module ActiveRecord
           refresh_all: "Refresh all registered materialized views",
           refresh_stale: "Refresh stale materialized views",
           rebuild: "Rebuild (fully materialize) all registered materialized views",
-          verify: "Verify materialized view cache tables match their source relations"
+          verify: "Verify materialized view cache tables match their source relations",
+          warm_up: "Materialize each view's configured warm_up partitions"
         }.freeze,
         T::Hash[Symbol, String]
       )
@@ -38,6 +39,7 @@ module ActiveRecord
         when :refresh_stale then run_refresh_stale!
         when :rebuild then run_rebuild_all!
         when :verify then run_verify!
+        when :warm_up then run_warm_up_all!
         end
       end
 
@@ -64,6 +66,12 @@ module ActiveRecord
       def self.run_verify!
         ActiveRecord::Materialized.verify_schema!
         T.unsafe(Rails).logger.debug { "Verified #{Registry.all.size} materialized view schema(s)." }
+      end
+
+      sig { void }
+      def self.run_warm_up_all!
+        Registry.warm_up_all!
+        T.unsafe(Rails).logger.debug { "Warmed up #{Registry.all.size} materialized view(s)." }
       end
     end
   end

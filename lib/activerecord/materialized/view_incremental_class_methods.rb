@@ -69,8 +69,8 @@ module ActiveRecord
           AggregateAnalysis.new(view_class.resolved_source)
         end
 
-        # A built (warm) view whose aggregates are all distributive uses
-        # summary-delta IVM; otherwise writes drive scoped recompute.
+        # A warm view with all-distributive aggregates uses summary-delta IVM;
+        # otherwise writes drive scoped recompute.
         sig { returns(T::Boolean) }
         def delta_maintaining?
           resolved_refresh_mode != :full && view_class.materialized? && aggregate_analysis.delta_maintainable?
@@ -89,8 +89,8 @@ module ActiveRecord
           delta = MaintenanceDeltaBuilder.new(change, maintenance_key_columns).build
           record_write_delta!(delta)
 
-          # On a cold (partially-materialized) view the written partitions are no
-          # longer current, so drop them from the fresh set until re-maintained.
+          # On a cold view the written partitions are no longer current; drop them
+          # from the fresh set until re-maintained.
           return if view_class.materialized? || delta.full_partition?
 
           PartitionState.new(view_class).mark_stale!(delta.key_tuples)

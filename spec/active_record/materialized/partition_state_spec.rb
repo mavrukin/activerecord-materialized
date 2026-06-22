@@ -6,25 +6,16 @@ RSpec.describe ActiveRecord::Materialized::PartitionState do
   subject(:partitions) { described_class.new(view_class) }
 
   let(:view_class) do
-    Class.new(ActiveRecord::Materialized::View) do
-      self.table_name = "mv_partition_items"
-      materialized_from { ViewSources.item_count_by_category }
-      refresh_on_change :manual
-    end
+    define_view("mv_partition_items", :item_count_by_category) { refresh_on_change :manual }
   end
 
   let(:record_create) do
-    lambda do |item|
-      view_class.record_write_change!(ActiveRecord::Materialized::WriteChange.from_record(item, :create))
-    end
+    ->(item) { view_class.record_write_change!(write_change(item, :create)) }
   end
 
   before do
     ActiveRecord::Materialized::DependencyRegistry.reset!
-    Item.delete_all
-    Item.create!(category: "books", amount: 1)
-    Item.create!(category: "books", amount: 2)
-    Item.create!(category: "games", amount: 3)
+    seed_items(["books", 1], ["books", 2], ["games", 3])
   end
 
   describe ".keys_from" do

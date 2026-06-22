@@ -18,9 +18,8 @@ module ActiveRecord
         @view_class = view_class
       end
 
-      # Single entry point for the metadata row. Every accessor and mutator
-      # below funnels through here, so the metadata table (and its columns)
-      # are ensured exactly once per operation.
+      # Single entry point for the metadata row; every accessor funnels through
+      # here so the metadata table is ensured exactly once per operation.
       sig { returns(MetadataRecord) }
       def record
         Schema.ensure_table!(view_class)
@@ -52,8 +51,7 @@ module ActiveRecord
         !!record.dirty?
       end
 
-      # A view is "warm" once it has been fully materialized via rebuild! (or
-      # warm-up). Cold views are served through the read-through path.
+      # Warm once fully materialized via rebuild!; cold views read through.
       sig { returns(T::Boolean) }
       def warm?
         !!record.warm?

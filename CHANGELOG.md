@@ -16,7 +16,8 @@ Initial release.
 - `depends_on` dependency tracking via ActiveRecord `after_*_commit` callbacks
 - Refresh strategies: `:async` (default), `:immediate`, `:manual`
 - Debounced async refresh with in-process `AsyncRefresher` or ActiveJob dispatcher
-- Atomic table-swap on `rebuild!` (`CREATE TABLE AS` + rename) for a consistent full materialization
+- `rebuild!` materializes entirely in the database with `INSERT … SELECT` over the source query (atomic table swap), so the result set never crosses into Ruby memory — safe to run against a large dataset
+- Warm-up: a `warm_up { [...] }` DSL plus `warm_up!` / `materialized:warm_up` materialize a cold view's hot partitions ahead of traffic, leaving the rest to read through on demand
 - Incremental view maintenance (IVM) for `GROUP BY` views — never a routine table rebuild:
   - **Summary-delta** maintenance for distributive views (`SUM` / `COUNT` / `COUNT(*)`): writes apply signed per-partition deltas to the cache table without re-reading base rows, with NULL-safe sums and empty-partition deletion
   - **Scoped recompute** (partition-local delete + re-aggregate) for everything else — `AVG`, `MIN`, `MAX`, `COUNT(DISTINCT)`, joins, `HAVING` — always correct
@@ -26,7 +27,7 @@ Initial release.
 - Migration-provisioned cache tables: `activerecord_materialized:migration <View>` generates a `create_table` migration with columns/types inferred from the source relation, so the table exists at deploy time
 - Boot/CI schema drift verification (`materialized:verify` / `ActiveRecord::Materialized.verify_schema!`) raises a helpful error when a view's table no longer matches its relation — never auto-alters
 - Rails generators: `activerecord_materialized:install`, `activerecord_materialized:view`, `activerecord_materialized:migration`
-- Rake tasks: `materialized:refresh_all`, `materialized:refresh_stale`, `materialized:rebuild`, `materialized:verify`
+- Rake tasks: `materialized:refresh_all`, `materialized:refresh_stale`, `materialized:rebuild`, `materialized:verify`, `materialized:warm_up`
 - JOB-schema benchmark suite with multi-second analytical queries on SQLite
 
 ### Benchmark highlights (xlarge dataset, ~2M cast_info rows)

@@ -2,27 +2,12 @@
 
 require "spec_helper"
 
-module RefreshAndQueryIntegrationHelpers
-  module_function
-
-  def seed_items!
-    Item.delete_all
-    [
-      ["books", 10], ["books", 20], ["games", 3], ["games", 4], ["tools", 50]
-    ].each { |category, amount| Item.create!(category: category, amount: amount) }
-  end
-end
-
 module MaterializedViewIntegration
 end
 
 RSpec.describe MaterializedViewIntegration, :integration do
   let(:view_class) do
-    Class.new(ActiveRecord::Materialized::View) do
-      self.table_name = "mv_revenue_by_category"
-
-      materialized_from { ViewSources.revenue_by_category }
-
+    define_view("mv_revenue_by_category", :revenue_by_category) do
       depends_on :items
       max_staleness 6.hours
 
@@ -35,7 +20,7 @@ RSpec.describe MaterializedViewIntegration, :integration do
   end
 
   it "supports complex aggregation workflows end-to-end" do
-    RefreshAndQueryIntegrationHelpers.seed_items!
+    seed_items(["books", 10], ["books", 20], ["games", 3], ["games", 4], ["tools", 50])
 
     result = view_class.rebuild!(confirm: true)
     expect(result.row_count).to eq(3)

@@ -13,10 +13,8 @@ module ActiveRecord
         @view_class = view_class
       end
 
-      # Accumulates either kind of pending maintenance: a SummaryDelta (delta
-      # IVM) or a MaintenanceDelta (scoped recompute). A view's mode is fixed
-      # within a maintenance window, so the existing pending (if any) is always
-      # the same kind.
+      # Accumulates pending maintenance of either kind. A view's mode is fixed
+      # within a window, so existing pending is always the same kind.
       sig { params(delta: Pending).void }
       def merge!(delta)
         current = pending

@@ -3,10 +3,10 @@
 require "spec_helper"
 
 module DeltaMaintainerHelpers
-  # Build the WriteChange a record produced and apply its delta to the cache.
+  # Apply the delta a record's write contributes to the cache.
   def apply_change(record, operation)
-    change = ActiveRecord::Materialized::WriteChange.from_record(record, operation)
-    delta = ActiveRecord::Materialized::SummaryDeltaBuilder.new(change, analysis, group_columns).build
+    delta = ActiveRecord::Materialized::SummaryDeltaBuilder
+            .new(write_change(record, operation), analysis, group_columns).build
     maintainer.apply!(delta)
   end
 
@@ -43,20 +43,12 @@ RSpec.describe ActiveRecord::Materialized::DeltaMaintainer do
 
   subject(:maintainer) { described_class.new(view_class) }
 
-  let(:view_class) do
-    Class.new(ActiveRecord::Materialized::View) do
-      self.table_name = "mv_delta_sales"
-      materialized_from { ViewSources.sales_by_category }
-    end
-  end
+  let(:view_class) { define_view("mv_delta_sales", :sales_by_category) }
   let(:analysis) { ActiveRecord::Materialized::AggregateAnalysis.new(view_class.resolved_source) }
   let(:group_columns) { view_class.maintenance_key_columns }
 
   before do
-    Item.delete_all
-    Item.create!(category: "books", amount: 10)
-    Item.create!(category: "books", amount: 5)
-    Item.create!(category: "games", amount: 20)
+    seed_items(["books", 10], ["books", 5], ["games", 20])
     view_class.rebuild!(confirm: true)
   end
 
@@ -108,7 +100,7 @@ RSpec.describe ActiveRecord::Materialized::DeltaMaintainer do
       expect(view_class.delta_maintaining?).to be(true)
 
       item = Item.create!(category: "books", amount: 50)
-      view_class.record_write_change!(ActiveRecord::Materialized::WriteChange.from_record(item, :create))
+      view_class.record_write_change!(write_change(item, :create))
 
       expect(store.pending).to be_a(ActiveRecord::Materialized::SummaryDelta)
 

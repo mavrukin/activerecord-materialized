@@ -17,10 +17,7 @@ module ActiveRecord
         @metadata = T.let(nil, T.nilable(Metadata))
       end
 
-      # Explicit, intentional full materialization. This is the only path that
-      # scans all base data, so callers (Klass.rebuild!, warm-up) opt in
-      # deliberately — it is never triggered by a read or by background
-      # maintenance.
+      # Full materialization — the only path that scans all base data.
       sig { returns(RefreshResult) }
       def rebuild!
         run_cycle(-> { perform_rebuild! })
@@ -28,9 +25,7 @@ module ActiveRecord
         fail_refresh!(e)
       end
 
-      # Incremental maintenance only. Never builds a cold view and never scans
-      # all base data; a no-op when the view is not warm or not incrementally
-      # maintainable. Used by the read and background-maintenance paths.
+      # Incremental maintenance only; a no-op when the view is not maintainable.
       sig { returns(RefreshResult) }
       def refresh!
         return RefreshResult.skipped(view_class) unless maintainable?
@@ -74,8 +69,7 @@ module ActiveRecord
       def perform_rebuild!
         row_count = RelationCacheWriter.new(view_class).atomic_swap!(view_class.resolved_source)
         metadata.mark_warm!
-        # Now fully materialized: the cold-view partition exceptions no longer
-        # apply.
+        # Fully materialized now, so the cold-view partition exceptions no longer apply.
         PartitionState.new(view_class).reset!
         row_count
       end
@@ -91,8 +85,7 @@ module ActiveRecord
         IncrementalMaintainer.new(view_class).maintain!(view_class.connection, view_class.table_name)
       end
 
-      # A cold view may not have a cache table yet; partition maintenance needs
-      # somewhere to write. Cheap DDL only — never a full populate.
+      # Cheap DDL so partition maintenance has somewhere to write — never a populate.
       sig { void }
       def ensure_cache_table!
         return if view_class.table_exists?

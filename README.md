@@ -330,7 +330,8 @@ end
 
 | Method | Description |
 |--------|-------------|
-| `rebuild!(confirm: true)` | **Explicit** full materialization from the `materialized_from` relation — the only full-scan path; never fires implicitly |
+| `rebuild!(confirm: true)` | **Explicit** full materialization via in-database `INSERT … SELECT` (the only full-scan path; never fires implicitly, never buffers rows in Ruby) |
+| `warm_up!` | Materialize the configured `warm_up` partitions ahead of traffic |
 | `refresh!` | Incremental maintenance only (no-op on an unbuilt view); never rebuilds |
 | `refresh_if_stale!` | Incremental maintenance when materialized and stale |
 | `materialized?` | Whether the view has been built (warm) and reads serve from the cache |
@@ -350,6 +351,7 @@ end
 | `refresh_debounce(duration)` | Coalesce rapid writes before refreshing |
 | `refresh_mode(mode)` | `:incremental` (default) or `:full` |
 | `cold_read(strategy)` | Read behavior before the view is built: `:read_through` (default), `:serve_stale`, or `:raise` |
+| `warm_up { [relations] }` | Representative queries whose partitions `warm_up!` materializes ahead of traffic |
 | `incremental_from { relation }` | Optional override for scoped maintenance relation |
 | `incremental_keys(*columns)` | Optional override for inferred `GROUP BY` keys |
 | `max_staleness(duration)` | Optional time-based safety refresh via rake/cron |
@@ -373,8 +375,9 @@ Include or extend `ActiveRecord::Materialized::QueryExpressions` when defining a
 ```bash
 bin/rails materialized:refresh_all     # incremental maintenance pass
 bin/rails materialized:refresh_stale
-bin/rails materialized:rebuild         # intentional full materialization
+bin/rails materialized:rebuild         # intentional full materialization (in-DB INSERT … SELECT)
 bin/rails materialized:verify          # raise on cache-table schema drift
+bin/rails materialized:warm_up         # materialize configured warm_up partitions
 ```
 
 ---
