@@ -6,34 +6,34 @@ RSpec.describe ActiveRecord::Materialized::WriteChange do
   before { Item.delete_all }
 
   describe ".from_record" do
-    it "captures all attributes for a create" do
+    it "captures the full after-snapshot for a create" do
       item = Item.create!(category: "books", amount: 5)
       change = described_class.from_record(item, :create)
 
       expect(change.operation).to eq(:create)
       expect(change.table_name).to eq("items")
-      expect(change.attributes).to include("category" => "books", "amount" => 5)
-      expect(change.previous_attributes).to eq({})
+      expect(change.after).to include("category" => "books", "amount" => 5)
+      expect(change.before).to eq({})
     end
 
-    it "captures old and new values for an update" do
+    it "captures full old and new snapshots for an update, including unchanged columns" do
       item = Item.create!(category: "books", amount: 5)
       item.update!(category: "games")
       change = described_class.from_record(item, :update)
 
       expect(change.operation).to eq(:update)
-      expect(change.attributes).to eq("category" => "games")
-      expect(change.previous_attributes).to eq("category" => "books")
+      expect(change.before).to include("category" => "books", "amount" => 5)
+      expect(change.after).to include("category" => "games", "amount" => 5)
     end
 
-    it "captures the database state for a destroy" do
+    it "captures the full before-snapshot for a destroy" do
       item = Item.create!(category: "books", amount: 5)
       item.destroy!
       change = described_class.from_record(item, :destroy)
 
       expect(change.operation).to eq(:destroy)
-      expect(change.attributes).to include("category" => "books", "amount" => 5)
-      expect(change.previous_attributes).to eq({})
+      expect(change.before).to include("category" => "books", "amount" => 5)
+      expect(change.after).to eq({})
     end
 
     it "raises for an unsupported operation" do

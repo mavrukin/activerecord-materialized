@@ -17,7 +17,9 @@ Initial release.
 - Refresh strategies: `:async` (default), `:immediate`, `:manual`
 - Debounced async refresh with in-process `AsyncRefresher` or ActiveJob dispatcher
 - Atomic table-swap on `rebuild!` (`CREATE TABLE AS` + rename) for a consistent full materialization
-- Default incremental maintenance (IVM) for `GROUP BY` views — partition-local delete + re-aggregate, no routine table rebuild
+- Incremental view maintenance (IVM) for `GROUP BY` views — never a routine table rebuild:
+  - **Summary-delta** maintenance for distributive views (`SUM` / `COUNT` / `COUNT(*)`): writes apply signed per-partition deltas to the cache table without re-reading base rows, with NULL-safe sums and empty-partition deletion
+  - **Scoped recompute** (partition-local delete + re-aggregate) for everything else — `AVG`, `MIN`, `MAX`, `COUNT(DISTINCT)`, joins, `HAVING` — always correct
 - Metadata tracking (`dirty`, `last_refreshed_at`, `row_count`, `refresh_duration_ms`, errors)
 - Optional `max_staleness` time-based safety net
 - `before_refresh` / `after_refresh` callbacks

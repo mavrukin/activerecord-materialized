@@ -100,7 +100,7 @@ flowchart TB
 4. **Accumulate** — for each affected view, `MaintenanceDeltaBuilder` records affected `GROUP BY` partition keys in `MaintenanceStore` (widens to all partitions when scope is unknown).
 5. **Defer** — `after_*_commit` fires only once the writing transaction commits, so changes are batched naturally and a rolled-back transaction schedules nothing.
 6. **Debounce** — rapid writes coalesce into one maintenance pass (configurable window).
-7. **Maintain** — `IncrementalMaintainer` deletes and re-aggregates only affected partitions in the existing cache table (no DDL, no atomic swap on the hot path).
+7. **Maintain** — distributive views (`SUM`/`COUNT`/`COUNT(*)`) apply signed **summary deltas** straight to the affected cache rows without re-reading base rows (`DeltaMaintainer`); everything else (`AVG`, `MIN`, `MAX`, `COUNT(DISTINCT)`, joins, `HAVING`) **re-aggregates only the affected partitions** (`IncrementalMaintainer`). Neither path does DDL or an atomic swap on the hot path.
 8. **Read** — once built, `where`, `find`, `count`, scopes query the cache table directly; reads before maintenance completes return the previous snapshot, reads after see updated partitions. Before the view is built, reads transparently fall through to the source query.
 
 ### Core components
@@ -168,7 +168,7 @@ This gem applies decades of materialized-view and incremental-maintenance resear
 - **Transparent ActiveRecord API** — `where`, `find`, `count`, scopes, associations on cache tables
 - **Relation-based sources** — `materialized_from` blocks return `ActiveRecord::Relation` (no raw SQL strings)
 - **Portable aggregations** — `QueryExpressions` helpers build Arel for `SUM`, `COUNT`, `AVG`, etc.
-- **Incremental maintenance by default** — partition-local re-aggregation for `GROUP BY` views; no cache-table rebuild on routine refresh
+- **Incremental maintenance by default** — summary-delta IVM for distributive `GROUP BY` views (signed deltas, no base re-scan) with partition-local re-aggregation as the always-correct fallback; no cache-table rebuild on routine refresh
 - **Atomic table swap on bootstrap only** — initial full materialization + rename when the cache is first built or on `refresh_mode :full`
 - **Debounced async refresh** — coalesce rapid writes (PostgreSQL NOTIFY + worker pattern)
 - **ActiveJob integration** — offload refresh to Sidekiq, GoodJob, Solid Queue, etc.

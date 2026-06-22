@@ -24,8 +24,12 @@ RSpec.describe ActiveRecord::Materialized::IncrementalMaintainer do
       connection = ActiveRecord::Base.connection
       allow(connection).to receive(:execute).and_call_original
 
-      item = Item.create!(category: "books", amount: 100)
-      view_class.record_write_change!(ActiveRecord::Materialized::WriteChange.from_record(item, :create))
+      Item.create!(category: "books", amount: 100)
+      # Drive the recompute path directly with a scoped delta (delta-maintainable
+      # views otherwise route through summary-delta IVM).
+      ActiveRecord::Materialized::MaintenanceStore.new(view_class).merge!(
+        ActiveRecord::Materialized::MaintenanceDelta.scoped([["books"]])
+      )
       described_class.new(view_class).maintain!(connection, view_class.table_name)
 
       expect(connection).not_to have_received(:execute)
