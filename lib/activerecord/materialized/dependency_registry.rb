@@ -3,6 +3,9 @@
 
 module ActiveRecord
   module Materialized
+    # Maps dependency tables to the views that depend on them and publishes committed writes to them.
+    #
+    # @api private
     class DependencyRegistry
       class << self
         extend T::Sig

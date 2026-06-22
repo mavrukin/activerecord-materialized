@@ -3,6 +3,7 @@
 
 module ActiveRecord
   module Materialized
+    # ActiveJob wrapper that runs a view's incremental refresh on a background worker.
     class RefreshJob < ::ActiveJob::Base
       extend T::Sig
 

@@ -11,6 +11,7 @@
 
 [![Gem Version](https://img.shields.io/gem/v/activerecord-materialized.svg)](https://rubygems.org/gems/activerecord-materialized)
 [![CI](https://github.com/mavrukin/activerecord-materialized/actions/workflows/ci.yml/badge.svg)](https://github.com/mavrukin/activerecord-materialized/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-rubydoc.info-blue.svg)](https://rubydoc.info/gems/activerecord-materialized)
 [![Ruby](https://img.shields.io/badge/ruby-%3E%3D%203.4-red)](activerecord-materialized.gemspec)
 [![Rails](https://img.shields.io/badge/rails-%3E%3D%208.0-red)](activerecord-materialized.gemspec)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -499,6 +500,13 @@ bin/setup            # bundle install + git hooks + Sorbet RBIs
 bin/ci               # RuboCop, Sorbet, and the full test suite
 bundle exec rake benchmark:setup
 bundle exec rake benchmark
+```
+
+**API documentation** is published at [rubydoc.info/gems/activerecord-materialized](https://rubydoc.info/gems/activerecord-materialized) (generated from YARD doc comments, with types pulled from the Sorbet signatures via `yard-sorbet`). Build it locally with:
+
+```bash
+bundle exec yard doc      # generates HTML into doc/
+bundle exec yard server   # browse at http://localhost:8808
 ```
 
 Maintainers: see [RELEASING.md](RELEASING.md) for the gem publishing process.

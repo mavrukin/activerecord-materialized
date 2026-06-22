@@ -3,6 +3,9 @@
 
 module ActiveRecord
   module Materialized
+    # Materializes a relation into a cache table via `INSERT … SELECT`, with an atomic swap on full refresh.
+    #
+    # @api private
     class RelationCacheWriter
       extend T::Sig
 

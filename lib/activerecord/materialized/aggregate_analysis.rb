@@ -12,6 +12,9 @@ module ActiveRecord
     class AggregateAnalysis
       extend T::Sig
 
+      # One classified aggregate column from a view's projection.
+      #
+      # @api private
       class Column < T::Struct
         const :name, String
         const :function, Symbol

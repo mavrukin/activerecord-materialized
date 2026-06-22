@@ -3,6 +3,9 @@
 
 module ActiveRecord
   module Materialized
+    # In-process, debounced background refresher — the default `:async` dispatcher.
+    #
+    # @api private
     class AsyncRefresher
       class << self
         extend T::Sig

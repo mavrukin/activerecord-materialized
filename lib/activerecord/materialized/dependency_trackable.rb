@@ -3,6 +3,9 @@
 
 module ActiveRecord
   module Materialized
+    # Installs `after_*_commit` callbacks on `depends_on` models so their writes schedule maintenance.
+    #
+    # @api private
     module DependencyTrackable
       extend T::Sig
 

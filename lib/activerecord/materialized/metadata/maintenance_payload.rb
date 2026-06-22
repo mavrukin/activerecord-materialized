@@ -4,6 +4,9 @@
 module ActiveRecord
   module Materialized
     class Metadata
+      # Reads and writes the serialized pending-maintenance payload on the metadata row.
+      #
+      # @api private
       module MaintenancePayload
         extend T::Sig
 

@@ -8,6 +8,7 @@ module ActiveRecord
     class SchemaVerifier
       extend T::Sig
 
+      # Raised when a cache table no longer matches the columns its source relation projects.
       class SchemaDriftError < StandardError; end
 
       sig { params(view_class: ViewClass).void }

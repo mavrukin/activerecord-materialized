@@ -3,6 +3,9 @@
 
 module ActiveRecord
   module Materialized
+    # Dispatches a view's configured refresh strategy (`:async` / `:immediate` / `:manual`) after a write.
+    #
+    # @api private
     class RefreshScheduler
       class << self
         extend T::Sig

@@ -3,6 +3,9 @@
 
 module ActiveRecord
   module Materialized
+    # Inspects a source relation for its GROUP BY maintenance keys and builds partition scopes.
+    #
+    # @api private
     class ViewDefinition
       extend T::Sig
 

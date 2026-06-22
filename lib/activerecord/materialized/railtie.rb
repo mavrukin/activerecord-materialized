@@ -3,6 +3,7 @@
 
 module ActiveRecord
   module Materialized
+    # Rails integration: wires the gem's load hooks and rake tasks into a host application.
     class Railtie < ::Rails::Railtie
       extend T::Sig
 

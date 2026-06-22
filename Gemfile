@@ -21,7 +21,10 @@ group :development, :test do
   gem "rubocop-rails", "~> 2.31", require: false
   gem "rubocop-rspec", "~> 3.5", require: false
   gem "rubocop-sorbet", "~> 0.10", require: false
+  gem "redcarpet", "~> 3.6", require: false
   gem "sorbet", "~> 0.5", require: false
   gem "sqlite3", "~> 2.1"
   gem "tapioca", "~> 0.16", require: false
+  gem "yard", "~> 0.9", require: false
+  gem "yard-sorbet", "~> 0.9", require: false
 end

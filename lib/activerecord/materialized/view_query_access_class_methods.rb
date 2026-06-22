@@ -6,6 +6,8 @@ module ActiveRecord
     # Raised when a read hits a cold view under the :raise cold-read strategy.
     class NotMaterializedError < StandardError; end
 
+    # Read and refresh API mixed into a {View}: `rebuild!`, `refresh!`, `refresh_if_stale!`,
+    # `materialized?`, `stale?`, `dirty?`, and the routed query methods.
     module ViewQueryAccessClassMethods
       extend T::Sig
       extend T::Helpers
@@ -15,6 +17,7 @@ module ActiveRecord
         base.extend(ClassMethods)
       end
 
+      # The read and refresh methods available on a {View} subclass.
       module ClassMethods
         extend T::Sig
 

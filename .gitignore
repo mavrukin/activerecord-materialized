@@ -1,6 +1,7 @@
 *.gem
 *.rbc
 /.config
+/.yardoc/
 /coverage/
 /doc/
 /Gemfile.lock

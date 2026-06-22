@@ -5,6 +5,7 @@ require "rails/generators"
 require "rails/generators/migration"
 
 module ActiverecordMaterialized
+  # `rails generate activerecord_materialized:install` — installs the metadata-table migration.
   class InstallGenerator < ::Rails::Generators::Base
     extend T::Sig
     include Rails::Generators::Migration

@@ -3,6 +3,9 @@
 
 module ActiveRecord
   module Materialized
+    # ActiveRecord model backing the materialized-view metadata table.
+    #
+    # @api private
     class MetadataRecord < ::ActiveRecord::Base
       extend T::Sig
 

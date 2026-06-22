@@ -3,6 +3,10 @@
 
 module ActiveRecord
   module Materialized
+    # Tracks every defined view class and provides bulk operations
+    # (refresh / rebuild / warm-up / verify) across all of them.
+    #
+    # @api private
     class Registry
       class << self
         extend T::Sig

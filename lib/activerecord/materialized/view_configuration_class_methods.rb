@@ -3,6 +3,7 @@
 
 module ActiveRecord
   module Materialized
+    # The `materialized_from` / `depends_on` DSL and source/metadata accessors mixed into every {View}.
     module ViewConfigurationClassMethods
       extend T::Sig
       extend T::Helpers
@@ -12,6 +13,7 @@ module ActiveRecord
         base.extend(ClassMethods)
       end
 
+      # The configuration DSL methods available on a {View} subclass.
       module ClassMethods
         extend T::Sig
         include ViewIncrementalClassMethods::ClassMethods

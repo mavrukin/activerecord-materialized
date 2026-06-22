@@ -3,6 +3,8 @@
 
 module ActiveRecord
   module Materialized
+    # Refresh-policy DSL mixed into a {View}: `refresh_on_change`, `refresh_debounce`, `cold_read`,
+    # `warm_up`, `max_staleness`, plus `warm_up!`.
     module ViewRefreshPolicyClassMethods
       extend T::Sig
       extend T::Helpers
@@ -12,6 +14,7 @@ module ActiveRecord
         base.extend(ClassMethods)
       end
 
+      # The refresh-policy DSL methods available on a {View} subclass.
       module ClassMethods
         extend T::Sig
 

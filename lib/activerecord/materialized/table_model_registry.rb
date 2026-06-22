@@ -3,6 +3,9 @@
 
 module ActiveRecord
   module Materialized
+    # Maps table names to their ActiveRecord models for dependency wiring.
+    #
+    # @api private
     class TableModelRegistry
       class << self
         extend T::Sig
