@@ -19,10 +19,9 @@ module ActiveRecord
         @schema_ensured = T.let(false, T::Boolean)
       end
 
-      # Single entry point for the metadata row. The schema is provisioned once
-      # per instance: ensuring it on every access re-runs introspection and
-      # resets column information, which thrashes the schema cache and makes
-      # high-write workloads quadratic.
+      # Single entry point for the metadata row. Provision the schema once per
+      # instance — re-ensuring on every access thrashes the schema cache and
+      # makes high-write workloads quadratic.
       sig { returns(MetadataRecord) }
       def record
         ensure_schema!

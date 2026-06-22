@@ -38,9 +38,8 @@ results = QUERIES.map do |query|
   refresh_result = query[:materialized].rebuild!(confirm: true)
   puts " #{refresh_result.row_count} rows in #{refresh_result.duration_ms}ms"
 
-  # Build a fresh relation per iteration. An ActiveRecord::Relation memoizes its
-  # rows once loaded, so reusing one object measures cached-array iteration
-  # (~0ms) rather than the query — which made raw look faster than the MV (#40).
+  # Fresh relation per iteration: a reused Relation memoizes its rows, so the
+  # loop would time cached-array iteration, not the query (#40).
   raw_avg, raw_result, = timed("raw") { query[:materialized].resolved_source.map(&:attributes) }
   mv_avg, mv_result, = timed("materialized") { query[:materialized].all.map(&:attributes) }
 
