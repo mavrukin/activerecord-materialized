@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
+ <defs><linearGradient id="b" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#D2293A"></stop><stop offset="1" stop-color="#9D1624"></stop></linearGradient></defs>
+ <path d="M25,28 V94 a35,11 0 0 0 70,0 V28 Z" fill="url(#b)"></path>
+ <path d="M25,28 V50 a35,11 0 0 0 70,0 V28 a35,11 0 0 1 -70,0 Z" fill="#FBF4F1"></path>
+ <ellipse cx="60" cy="28" rx="35" ry="11" fill="#FBF4F1"></ellipse>
+ <ellipse cx="60" cy="28" rx="35" ry="11" fill="none" stroke="#C7283A" stroke-width="1.6"></ellipse>
+ <path d="M30,38 a30,9 0 0 0 60,0" fill="none" stroke="#D2293A" stroke-width="1.8"></path>
+ <path d="M34,45 a26,8 0 0 0 52,0" fill="none" stroke="#D2293A" stroke-width="1.8" stroke-opacity="0.55"></path>
+ <path d="M25,50 a35,11 0 0 0 70,0" fill="none" stroke="#6E0C18" stroke-width="2"></path>
+ <path d="M25,72 a35,11 0 0 0 70,0" fill="none" stroke="#FBF8F5" stroke-opacity="0.28" stroke-width="1.5"></path>
+ <path d="M25,28 V94 a35,11 0 0 0 70,0 V28" fill="none" stroke="#6E0C18" stroke-width="2.6" stroke-linejoin="round"></path>
+</svg>
