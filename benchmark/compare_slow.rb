@@ -29,14 +29,15 @@ BenchmarkSupport.load_materialized_models!
 iterations = Integer(ENV.fetch("BENCH_ITERATIONS", "5"))
 
 results = SLOW_QUERIES.map do |query|
-  source_relation = query[:materialized].resolved_source
-
   print "Bootstrap refresh (one-time) #{query[:name]}..."
   refresh_result = query[:materialized].rebuild!(confirm: true)
   puts " #{refresh_result.row_count} rows in #{refresh_result.duration_ms}ms"
 
-  warmup, = BenchmarkSupport.timed(iterations: 1) { source_relation.map(&:attributes) }
-  raw_avg, raw_result = BenchmarkSupport.timed(iterations: iterations) { source_relation.map(&:attributes) }
+  # Fresh relation per iteration: a reused Relation memoizes its rows, so the
+  # loop would time cached-array iteration, not the query (#40).
+  run_raw = -> { query[:materialized].resolved_source.map(&:attributes) }
+  warmup, = BenchmarkSupport.timed(iterations: 1, &run_raw)
+  raw_avg, raw_result = BenchmarkSupport.timed(iterations: iterations, &run_raw)
   mv_avg, mv_result = BenchmarkSupport.timed(iterations: iterations) { query[:materialized].all.map(&:attributes) }
 
   flag = raw_avg >= query[:min_raw_seconds] ? "OK" : "WARN (< #{query[:min_raw_seconds]}s)"

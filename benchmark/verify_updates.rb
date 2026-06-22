@@ -71,6 +71,10 @@ BenchmarkSupport::DatasetInfo.print_report(stats)
 view = GenderPairingStatsView
 view.metadata.clear_maintenance_payload!
 
+# Drive maintenance explicitly: the view refreshes :async with debounce 0, so a
+# background refresh would fire per committed row. Accumulate, refresh once (#40).
+ActiveRecord::Materialized::AsyncRefresher.paused = true
+
 connection = ActiveRecord::Base.connection
 bootstrap_ms = nil
 

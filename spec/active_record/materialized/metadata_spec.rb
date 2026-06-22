@@ -22,4 +22,15 @@ RSpec.describe ActiveRecord::Materialized::Metadata do
     expect(metadata.last_refreshed_at).to be_within(1.second).of(Time.now.utc)
     expect(metadata.dirty?).to be(false)
   end
+
+  it "provisions the schema once, not on every access" do
+    allow(ActiveRecord::Materialized::Metadata::Schema).to receive(:ensure_table!).and_call_original
+
+    metadata.mark_dirty!
+    10.times { metadata.dirty? }
+    metadata.mark_refreshing!
+    metadata.record
+
+    expect(ActiveRecord::Materialized::Metadata::Schema).to have_received(:ensure_table!).once
+  end
 end

@@ -35,13 +35,13 @@ puts "Iterations per query: #{ITERATIONS}"
 puts "=" * 72
 
 results = QUERIES.map do |query|
-  source_relation = query[:materialized].resolved_source
-
   print "Bootstrap refresh (one-time) for #{query[:name]}..."
   refresh_result = query[:materialized].rebuild!(confirm: true)
   puts " #{refresh_result.row_count} rows in #{refresh_result.duration_ms}ms"
 
-  raw_avg, raw_result, = timed("raw") { source_relation.map(&:attributes) }
+  # Fresh relation per iteration: a reused Relation memoizes its rows, so the
+  # loop would time cached-array iteration, not the query (#40).
+  raw_avg, raw_result, = timed("raw") { query[:materialized].resolved_source.map(&:attributes) }
   mv_avg, mv_result, = timed("materialized") { query[:materialized].all.map(&:attributes) }
 
   speedup = mv_avg.zero? ? Float::INFINITY : raw_avg / mv_avg
