@@ -57,8 +57,10 @@ scenario** (no jumping to the top of the page):
   from the cache.
 - **Build / refresh** — materializes (or re-materializes) the cache table; the
   one-time bootstrap cost is shown explicitly.
-- **Insert cast rows** — writes rows to `cast_info`, which the gem's `after_commit`
-  hooks turn into a "dirty" marker on every dependent view.
+- **Insert cast rows** — writes rows to `cast_info`. The gem's `after_commit`
+  hooks mark every dependent view out of sync and an in-process background refresh
+  brings it back up to date on its own. The status pill updates live
+  (**out of sync → syncing → up to date**) as the page polls `/status`.
 - **Reset to cold** — drops the cache table so you can replay the cold-read story.
 
 ## A guided tour
@@ -71,19 +73,21 @@ This walks the four cases the gem is built for:
 2. **Raw vs. materialized.** Click **Build / refresh**, then **Compare** again.
    Same answer, now served from the cache table — orders of magnitude faster (the
    gap widens dramatically on the larger datasets).
-3. **Transparent updates.** Click **Insert cast rows**, then **Compare**: the raw
-   query reflects the new rows immediately while the cache still holds the old
-   value (the card shows **Stale**), and the two result tables now differ. Click
-   **Build / refresh** and **Compare** once more — the view has caught up.
+3. **Transparent, self-healing updates.** Click **Insert cast rows**. The view's
+   status flips to **out of sync** and then, a moment later, back to **up to date**
+   on its own — a background refresh ran with no action from you. **Compare**
+   right after the insert to catch the cache mid-recovery (the result tables
+   differ), then again once it's up to date (they match).
 4. **Real results, not just timings.** Every comparison shows the actual rows
    returned by both paths, the row counts, the timings, and the query's SQL.
 
 ## Notes
 
-- The demo sets each view's refresh strategy to `:manual` so *you* drive the
-  refresh and can watch the stale → fresh transition. Production apps typically
-  keep the default `:async` strategy, which refreshes automatically in the
-  background after writes commit.
+- The demo uses the gem's default `:async` refresh strategy (with a short
+  debounce) so writes refresh the view automatically in the background, exactly
+  as a production app would. The page polls `/status` to surface the
+  out-of-sync → up-to-date transition; SQLite runs in WAL mode so those reads
+  aren't blocked while a refresh holds the write lock.
 - Switching datasets reconnects ActiveRecord at runtime and resets the gem's
   per-database schema/metadata caches; each database keeps its own cache tables.
 - Everything here lives under `demo/` and is excluded from the published gem.

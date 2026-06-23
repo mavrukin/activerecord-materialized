@@ -40,7 +40,7 @@
 <ol class="howto">
   <li><b>Compare</b> a fresh scenario — the view isn’t built, so it reads <i>through</i> to the source (correct, still slow).</li>
   <li><b>Build / refresh</b> it, then <b>Compare</b> again — same answer, now from the cache (orders of magnitude faster).</li>
-  <li><b>Insert cast rows</b>, <b>Compare</b> — the raw query reflects them; the cache stays put until you refresh.</li>
+  <li><b>Insert cast rows</b> — the view goes <b>out of sync</b> and refreshes itself in the background; watch the status pill reach <b>up to date</b>, then <b>Compare</b> to confirm.</li>
 </ol>
 
 <% @scenarios.each do |scenario| %>
@@ -52,7 +52,7 @@
         <span class="tag"><%= scenario.complexity %></span>
         <h2><%= scenario.label %></h2>
       </div>
-      <span class="pill <%= status[:css] %>"><%= status[:label] %></span>
+      <span class="pill <%= status[:css] %>" data-key="<%= scenario.key %>" data-state="<%= status[:state] %>"><%= status[:label] %></span>
     </header>
     <p class="desc"><%= scenario.description %></p>
     <details class="sql">
@@ -88,3 +88,38 @@
     document.getElementById("s-<%= @active %>")?.scrollIntoView({ behavior: "smooth", block: "center" });
   </script>
 <% end %>
+
+<script>
+  // Poll view freshness so the status pills update live as a background refresh
+  // runs (out of sync -> syncing -> up to date), without reloading the page.
+  (function () {
+    const transitional = new Set(["dirty", "syncing"]);
+    let timer = null;
+
+    async function poll() {
+      let active = false;
+      try {
+        const res = await fetch("<%= status_path %>", { headers: { Accept: "application/json" } });
+        const data = await res.json();
+        for (const [key, st] of Object.entries(data)) {
+          const pill = document.querySelector('.pill[data-key="' + key + '"]');
+          if (pill) { pill.textContent = st.label; pill.className = "pill " + st.css; pill.dataset.state = st.state; }
+          if (transitional.has(st.state)) active = true;
+        }
+      } catch (_e) { /* keep trying */ }
+      timer = active ? setTimeout(poll, 1200) : null;
+    }
+
+    function maybeStart() {
+      if (timer) return;
+      const anyTransitional = [...document.querySelectorAll(".pill[data-state]")]
+        .some((p) => transitional.has(p.dataset.state));
+      if (anyTransitional) poll();
+    }
+
+    maybeStart();
+    // After a mutate the page reloads with a transitional pill; also re-check
+    // when the tab regains focus.
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) maybeStart(); });
+  })();
+</script>
