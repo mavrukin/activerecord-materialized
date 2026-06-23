@@ -228,6 +228,7 @@ This gem applies decades of materialized-view and incremental-maintenance resear
 | **No automatic indexes** | Cache tables are created from query results. Add indexes on cache columns you filter/sort on. |
 | **Storage** | Cache tables duplicate data. Plan disk usage accordingly. |
 | **Nested transactions** | Refresh is scheduled on the transaction where the write occurred; rollback clears pending refreshes for that transaction. |
+| **Bulk writes** | Each committed row to a `depends_on` model runs the maintenance bookkeeping once. Use `:async` (with a non-zero debounce, the default) or `:manual`, not `refresh_debounce 0` or `:immediate`. Pending scope that spans more than `max_tracked_partitions` distinct partitions collapses to one full recompute. `insert_all`/`upsert_all` **bypass** `after_commit`, so the view won't be notified — call `refresh!` (or `mark_dependencies_changed!`) yourself after a callback-skipping bulk load. |
 
 ---
 
@@ -359,6 +360,7 @@ ActiveRecord::Materialized.configure do |config|
   config.default_max_staleness = 12.hours
   config.default_cold_read_strategy = :read_through  # :serve_stale or :raise
   config.atomic_swap_refresh = true
+  config.max_tracked_partitions = 1_000             # collapse to a full recompute past this
   config.metadata_table_name = "ar_materialized_view_metadata"
 end
 ```

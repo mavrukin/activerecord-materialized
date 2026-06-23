@@ -39,6 +39,13 @@ module ActiveRecord
         scope == FULL
       end
 
+      # How many distinct partitions this pending maintenance tracks. A
+      # full-partition recompute tracks none — it is already the collapsed form.
+      sig { returns(Integer) }
+      def tracked_partition_count
+        full_partition? ? 0 : key_tuples.size
+      end
+
       sig { params(other: MaintenanceDelta).returns(MaintenanceDelta) }
       def merge(other)
         return other if other.full_partition?

@@ -49,6 +49,19 @@ module ActiveRecord
       sig { returns(Symbol) }
       attr_accessor :default_cold_read_strategy
 
+      # Cap on distinct partitions tracked in a view's pending maintenance before
+      # it collapses to a single full recompute. Bounds the per-write cost of a
+      # bulk write that spans many partitions. Defaults to 1000.
+      #
+      # @return [Integer]
+      sig { params(max_tracked_partitions: Integer).void }
+      attr_writer :max_tracked_partitions
+
+      sig { returns(Integer) }
+      def max_tracked_partitions
+        @max_tracked_partitions ||= T.let(1_000, T.nilable(Integer))
+      end
+
       sig { void }
       def initialize
         @metadata_table_name = T.let("ar_materialized_view_metadata", String)
