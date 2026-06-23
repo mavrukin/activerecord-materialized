@@ -17,12 +17,13 @@ module ActiveRecord
       end
 
       # Accumulates pending maintenance of either kind. A view's mode is fixed
-      # within a window, so existing pending is always the same kind.
+      # within a window, so existing pending is always the same kind. Once the
+      # tracked partitions exceed the configured cap, the payload collapses to a
+      # single full recompute, so a bulk write spanning many partitions stays
+      # O(1) per write instead of re-serializing an ever-growing blob.
       sig { params(delta: Pending).void }
       def merge!(delta)
-        current = pending
-        merged = current.instance_of?(delta.class) ? T.unsafe(current).merge(delta) : delta
-        metadata.record_maintenance_payload!(T.unsafe(merged).serialize)
+        metadata.record_maintenance_payload!(T.unsafe(combine(pending, delta)).serialize)
       end
 
       sig { returns(T.nilable(Pending)) }
@@ -49,6 +50,25 @@ module ActiveRecord
       end
 
       private
+
+      sig { params(current: T.nilable(Pending), delta: Pending).returns(Pending) }
+      def combine(current, delta)
+        return delta if current.nil?
+        return current if recompute_all?(current) # terminal: absorb everything
+
+        merged = current.instance_of?(delta.class) ? T.unsafe(current).merge(delta) : delta
+        oversized?(merged) ? MaintenanceDelta.full_partition : merged
+      end
+
+      sig { params(pending: T.nilable(Pending)).returns(T::Boolean) }
+      def recompute_all?(pending)
+        pending.is_a?(MaintenanceDelta) && pending.full_partition?
+      end
+
+      sig { params(merged: Pending).returns(T::Boolean) }
+      def oversized?(merged)
+        merged.tracked_partition_count > ActiveRecord::Materialized.configuration.max_tracked_partitions
+      end
 
       sig { returns(ViewClass) }
       attr_reader :view_class

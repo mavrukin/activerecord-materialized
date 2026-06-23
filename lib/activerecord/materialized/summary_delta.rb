@@ -33,6 +33,12 @@ module ActiveRecord
         @buckets.empty?
       end
 
+      # Number of distinct partitions (buckets) accumulated so far.
+      sig { returns(Integer) }
+      def tracked_partition_count
+        @buckets.size
+      end
+
       # Drops net-zero columns (no-op changes) and the partitions left empty.
       sig { returns(SummaryDelta) }
       def prune!

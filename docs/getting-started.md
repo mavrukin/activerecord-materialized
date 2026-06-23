@@ -263,6 +263,10 @@ read-through until it's touched.
 - **Declare every dependency.** Refresh-on-write only fires for tables you list in
   `depends_on`, and only for writes that go through ActiveRecord (raw SQL writes
   bypass the commit callbacks).
+- **Bulk loads.** Stick with `:async` (non-zero debounce) or `:manual`. Note that
+  `insert_all`/`upsert_all` skip `after_commit`, so the view isn't notified — call
+  `refresh!` afterwards. Maintenance spanning more than `max_tracked_partitions`
+  distinct partitions automatically collapses to one full recompute.
 
 ```ruby
 # config/initializers/activerecord_materialized.rb
