@@ -3,6 +3,7 @@
 Rails.application.routes.draw do
   root "comparison#index"
 
+  get "status", to: "comparison#status", as: :status
   post "select_db", to: "comparison#select_db", as: :select_db
   post "compare/:key", to: "comparison#compare", as: :compare
   post "refresh/:key", to: "comparison#refresh", as: :refresh

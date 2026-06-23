@@ -61,6 +61,8 @@
     .pill.ok { color: var(--ok); border-color: #bbf7d0; background: var(--ok-soft); }
     .pill.warn { color: var(--warn); border-color: #fde68a; background: var(--warn-soft); }
     .pill.muted { color: var(--muted); background: #f9fafb; }
+    .pill.sync { color: var(--cyan); border-color: #b9e6ec; background: var(--cyan-soft); animation: pulse 1.1s ease-in-out infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
 
     .actions { display: flex; gap: .5rem; flex-wrap: wrap; }
     .actions form { margin: 0; }

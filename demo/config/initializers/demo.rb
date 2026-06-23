@@ -10,8 +10,15 @@ BenchmarkSupport.load_materialized_models!
 
 require Rails.root.join("lib", "demo_comparison.rb").to_s
 
-# Keep the comparison deterministic: a dependency write only marks the view
-# dirty, so a human drives the refresh and can watch the view go stale and then
-# catch back up. Production apps usually keep the default :async strategy that
-# refreshes automatically in the background.
-DemoComparison::SCENARIOS.each { |scenario| scenario.view_class.refresh_on_change(:manual) }
+# Demonstrate the real refresh-on-write behaviour: a dependency write marks the
+# view stale and an in-process background refresh brings it back up to date on
+# its own (the gem's default :async strategy). A short debounce keeps the demo
+# snappy; the page polls the view status so you can watch it recover.
+DemoComparison::SCENARIOS.each do |scenario|
+  scenario.view_class.refresh_on_change(:async)
+  scenario.view_class.refresh_debounce(0.3)
+end
+
+# WAL lets reads (and the status poller) proceed while a background refresh holds
+# the write lock — without it SQLite blocks every read for the refresh's duration.
+DemoComparison::Database.enable_wal!

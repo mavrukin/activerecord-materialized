@@ -223,7 +223,12 @@ module DemoComparison
       return if path == current_path
 
       ActiveRecord::Base.establish_connection(adapter: "sqlite3", database: path, pool: 5, timeout: 5000)
+      enable_wal!
       reset_schema_caches!
+    end
+
+    def enable_wal!
+      ActiveRecord::Base.connection.execute("PRAGMA journal_mode=WAL")
     end
 
     def scale_of(path)

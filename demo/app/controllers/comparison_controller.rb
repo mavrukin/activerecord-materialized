@@ -10,7 +10,7 @@ class ComparisonController < ActionController::Base
   skip_forgery_protection
 
   before_action :sync_database
-  before_action :load_dashboard
+  before_action :load_dashboard, except: :status
   helper_method :scenario_status
 
   def index
@@ -35,9 +35,9 @@ class ComparisonController < ActionController::Base
   def mutate
     @active = scenario.key
     inserted = DemoComparison::Mutation.insert_cast_members!
-    @notice = "Inserted #{inserted} cast_info row(s). Every view that depends on cast_info is now " \
-              "stale — Compare to see the raw query reflect the change while the cache holds the old " \
-              "value, then Build / refresh to catch up."
+    @notice = "Inserted #{inserted} cast_info row(s). Every dependent view is now out of sync and is " \
+              "refreshing itself in the background — watch the status go syncing → up to date, then " \
+              "Compare to confirm the cache caught up."
     render :index
   end
 
@@ -56,6 +56,13 @@ class ComparisonController < ActionController::Base
       session[:db_path] = DemoComparison::Database.current_path
     end
     redirect_to root_path
+  end
+
+  # Lightweight JSON used by the page to poll each view's freshness, so the
+  # status pills can show "out of sync → syncing → up to date" as the background
+  # refresh runs — without reloading the page.
+  def status
+    render json: DemoComparison::SCENARIOS.to_h { |scn| [scn.key, scenario_status(scn).slice(:label, :css, :state)] }
   end
 
   private
@@ -77,9 +84,10 @@ class ComparisonController < ActionController::Base
 
   def scenario_status(scenario)
     view = scenario.view_class
-    return { label: "Not built — reads fall through to the source", css: "muted" } unless view.materialized?
-    return { label: "Stale — needs refresh", css: "warn" } if view.dirty?
+    return { label: "Not built — reads fall through to the source", css: "muted", state: "cold" } unless view.materialized?
+    return { label: "Syncing… catching up in the background", css: "sync", state: "syncing" } if view.refreshing?
+    return { label: "Out of sync — refreshing automatically", css: "sync", state: "dirty" } if view.dirty?
 
-    { label: "Fresh — served from cache", css: "ok" }
+    { label: "Up to date — served from cache", css: "ok", state: "fresh" }
   end
 end
