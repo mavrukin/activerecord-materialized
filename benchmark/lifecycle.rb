@@ -111,6 +111,21 @@ assert!("maintained value should exceed the baseline", updated > baseline)
 assert!("maintenance should leave the view clean", !VIEW.dirty?)
 timeline << ["4. Updated read (maintained)", "#{(maintenance * 1000).round(0)}ms", updated]
 
+# 5) Warm-up — pre-materialize one hot partition on a cold view; the rest stays
+#    read-through until touched.
+section "5) Warm-up — pre-materialize one hot partition, leave the rest cold"
+unbuild!(VIEW)
+VIEW.warm_up { [where(gender: "f")] }
+warm = Benchmark.realtime { VIEW.warm_up! }
+partitions = ActiveRecord::Materialized::PartitionState.new(VIEW)
+warm_value = female_pairings
+puts "  warmed the gender=f partition in #{(warm * 1000).round(0)}ms; fresh? #{partitions.all_fresh?([['f']])}"
+puts "  gender=f now served from cache: role_pairings=#{warm_value}"
+assert!("the warmed partition should be fresh", partitions.all_fresh?([["f"]]))
+assert!("an untouched partition should stay cold", !partitions.all_fresh?([["m"]]))
+assert!("the view as a whole stays cold (partial materialization)", !VIEW.materialized?)
+timeline << ["5. Warm-up (hot partition)", "#{(warm * 1000).round(0)}ms", warm_value]
+
 puts
 puts "-" * 66
 printf("%-34s %14s %14s\n", "Phase", "Time", "female pairings")
@@ -118,4 +133,4 @@ puts "-" * 66
 timeline.each { |stage, time, value| printf("%-34s %14s %14d\n", stage, time, value) }
 puts
 puts "Lifecycle verified: cold read-through -> build -> fast reads -> write ->"
-puts "in-place maintenance -> updated read. All assertions passed."
+puts "in-place maintenance -> updated read -> partition warm-up. All assertions passed."
