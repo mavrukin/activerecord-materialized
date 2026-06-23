@@ -62,7 +62,11 @@ class ComparisonController < ActionController::Base
   # status pills can show "out of sync → syncing → up to date" as the background
   # refresh runs — without reloading the page.
   def status
-    render json: DemoComparison::SCENARIOS.to_h { |scn| [scn.key, scenario_status(scn).slice(:label, :css, :state)] }
+    payload = DemoComparison::SCENARIOS.to_h do |scn|
+      DemoComparison.ensure_refresh_progress(scn)
+      [scn.key, scenario_status(scn).slice(:label, :css, :state)]
+    end
+    render json: payload
   end
 
   private

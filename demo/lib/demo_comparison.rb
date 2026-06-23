@@ -60,6 +60,23 @@ module DemoComparison
     SCENARIOS.find { |scenario| scenario.key == key }
   end
 
+  # Self-heal the auto-refresh. A view that is materialized and dirty but not
+  # currently refreshing means its scheduled background refresh was dropped or
+  # failed (in-process :async only retries on new writes). Re-drive it so the
+  # demo can never get permanently stuck "out of sync": ensure there is pending
+  # maintenance to apply (a refresh with nothing pending is a no-op), then
+  # re-schedule the async refresh.
+  def self.ensure_refresh_progress(scenario)
+    view = scenario.view_class
+    return unless view.materialized? && view.dirty? && !view.refreshing?
+
+    store = ActiveRecord::Materialized::MaintenanceStore.new(view)
+    store.merge!(ActiveRecord::Materialized::MaintenanceDelta.full_partition) if store.pending.nil?
+    ActiveRecord::Materialized::RefreshScheduler.schedule(view)
+  rescue StandardError => e
+    Rails.logger.warn("demo: could not re-drive refresh for #{scenario.key}: #{e.message}")
+  end
+
   Result = Struct.new(:label, :served, :ms, :row_count, :columns, :rows, keyword_init: true)
   Comparison = Struct.new(:scenario, :raw, :view, :speedup, :matches, keyword_init: true)
 
