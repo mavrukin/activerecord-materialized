@@ -69,27 +69,30 @@ module DemoComparison
     # The headline action: run the query both ways and return them together so
     # the page can show the timings, the actual rows, and whether they agree.
     def compare(scenario)
-      raw = measure_raw(scenario)
-      view = measure_view(scenario)
-      speedup = view.ms.positive? ? (raw.ms / view.ms).round : nil
-      Comparison.new(scenario: scenario, raw: raw, view: view, speedup: speedup, matches: rows_match?(raw, view))
-    end
-
-    def measure_raw(scenario)
-      rows = nil
-      ms = measure { rows = scenario.raw_relation.to_a }
-      tabular("Raw query", :source, ms, rows)
-    end
-
-    # Reading through the View. On a built (warm) view this hits the cache table;
-    # on a cold view the gem transparently reads through to the source query, so
-    # this single path demonstrates both "no MV yet" and "fast cached read".
-    def measure_view(scenario)
+      raw_records, raw_ms = run { scenario.raw_relation.to_a }
       view = scenario.view_class
       served = view.materialized? ? :cache : :read_through
-      rows = nil
-      ms = measure { rows = view.all.to_a }
-      tabular(served == :cache ? "Materialized view (cache)" : "View read-through (source)", served, ms, rows)
+      view_records, view_ms = run { view.all.to_a }
+
+      Comparison.new(
+        scenario: scenario,
+        raw: tabular("Raw query", :source, raw_ms, raw_records),
+        view: tabular(view_label(served), served, view_ms, view_records),
+        speedup: view_ms.positive? ? (raw_ms / view_ms).round : nil,
+        matches: same_data?(raw_records, view_records)
+      )
+    end
+
+    def run
+      result = nil
+      ms = measure { result = yield }
+      [result, ms]
+    end
+
+    # On a built (warm) view a read hits the cache table; on a cold view the gem
+    # transparently reads through to the source, so one path shows both states.
+    def view_label(served)
+      served == :cache ? "Materialized view (cache)" : "View read-through (source)"
     end
 
     def refresh(scenario)
@@ -114,17 +117,31 @@ module DemoComparison
       (Benchmark.realtime(&block) * 1000).round(2)
     end
 
+    # The cache table's surrogate primary key is not part of the materialized
+    # result (the raw grouped query has none), so ignore it everywhere.
+    IGNORED_COLUMNS = ["id"].freeze
+
     def tabular(label, served, ms, records)
-      sample = records.first(SAMPLE_ROWS).map(&:attributes)
+      sample = records.first(SAMPLE_ROWS).map { |record| record.attributes.except(*IGNORED_COLUMNS) }
       Result.new(label: label, served: served, ms: ms, row_count: records.size,
                  columns: sample.first&.keys || [], rows: sample)
     end
 
-    def rows_match?(raw, view)
-      shared = raw.columns & view.columns
-      return false if shared.empty?
+    # Compare the full results order-independently: the raw query and the cache
+    # may return rows in a different order, which is not a difference.
+    def same_data?(raw_records, view_records)
+      return false if raw_records.size != view_records.size
 
-      raw.rows.map { |row| row.values_at(*shared) } == view.rows.map { |row| row.values_at(*shared) }
+      shared = (attribute_keys(raw_records) & attribute_keys(view_records)) - IGNORED_COLUMNS
+      normalize(raw_records, shared) == normalize(view_records, shared)
+    end
+
+    def attribute_keys(records)
+      records.first&.attributes&.keys || []
+    end
+
+    def normalize(records, columns)
+      records.map { |record| record.attributes.values_at(*columns) }.sort_by(&:to_s)
     end
   end
 
@@ -155,16 +172,46 @@ module DemoComparison
   module Database
     module_function
 
-    SCALE_ORDER = %w[small medium large xlarge stress unknown].freeze
+    # The scales worth offering, smallest to largest, with a rough sense of the
+    # speedup each one demonstrates (raw query time grows with the data; the
+    # cache read stays sub-millisecond).
+    STANDARD_SCALES = [
+      { scale: "small", speedup: "~10×" },
+      { scale: "medium", speedup: "~50×" },
+      { scale: "large", speedup: "~1,000×" },
+      { scale: "xlarge", speedup: "thousands ×" }
+    ].freeze
 
-    def available
-      candidates = Dir[File.join(fixtures_dir, "*.sqlite")] | [current_path]
-      candidates.select { |path| File.file?(path) }.uniq.map { |path| describe(path) }
-                .sort_by { |db| SCALE_ORDER.index(db[:scale]) || SCALE_ORDER.size }
+    # Every standard scale, marked available when its database has been generated.
+    def datasets
+      generated = generated_by_scale
+      STANDARD_SCALES.map do |entry|
+        info = generated[entry[:scale]]
+        path = info || default_path_for(entry[:scale])
+        entry.merge(path: path, available: !info.nil?, current: File.expand_path(path) == current_path,
+                    command: generate_command(entry[:scale]))
+      end
     end
 
-    def describe(path)
-      { path: path, name: File.basename(path), scale: scale_of(path), current: path == current_path }
+    def available
+      datasets.select { |dataset| dataset[:available] }
+    end
+
+    def generated_by_scale
+      candidates = Dir[File.join(fixtures_dir, "*.sqlite")] | [current_path]
+      candidates.select { |path| File.file?(path) }.uniq.each_with_object({}) do |path, map|
+        map[scale_of(path)] = path
+      end
+    end
+
+    def default_path_for(scale)
+      name = scale == "medium" ? "job.sqlite" : "job.#{scale}.sqlite"
+      File.join(fixtures_dir, name)
+    end
+
+    def generate_command(scale)
+      "JOB_DB=benchmark/fixtures/#{File.basename(default_path_for(scale))} " \
+        "JOB_SCALE=#{scale} bundle exec rake benchmark:setup"
     end
 
     def current_path
