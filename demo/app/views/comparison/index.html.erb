@@ -11,8 +11,8 @@
     <label for="dbselect">Dataset</label>
     <select id="dbselect" name="path" onchange="this.form.requestSubmit()">
       <% @databases.each do |db| %>
-        <option value="<%= db[:path] %>" <%= "selected" if db[:current] %>>
-          <%= db[:scale] %> — <%= db[:name] %>
+        <option value="<%= db[:path] %>" <%= "selected" if db[:current] %> <%= "disabled" unless db[:available] %>>
+          <%= db[:scale] %> — <%= db[:available] ? "#{db[:speedup]} faster" : "not generated" %>
         </option>
       <% end %>
     </select>
@@ -25,11 +25,13 @@
   </div>
 </section>
 
-<% if @databases.size == 1 %>
+<% missing = @databases.reject { |db| db[:available] } %>
+<% if missing.any? %>
+  <% target = missing.last %>
   <p class="hint">
-    Only the <b><%= @databases.first[:scale] %></b> dataset is generated. Add larger ones from the repo root to feel
-    the difference, then reload:<br>
-    <code>JOB_DB=benchmark/fixtures/job.xlarge.sqlite JOB_SCALE=xlarge bundle exec rake benchmark:setup</code>
+    💡 The bigger the dataset, the more dramatic the win — <b>medium</b> is only ~50×, <b><%= target[:scale] %></b> is
+    <b><%= target[:speedup] %></b>. Generate one from the repo root, then reload this page:
+    <code><%= target[:command] %></code>
   </p>
 <% end %>
 

@@ -1,6 +1,11 @@
 # frozen_string_literal: true
 
 class ComparisonController < ActionController::Base
+  # ActionController::Base does not auto-apply the application layout the way a
+  # generated ApplicationController does, so declare it (without it, the inline
+  # stylesheet in the layout never reaches the page).
+  layout "application"
+
   # Local single-user demo: skip CSRF so the action buttons need no token.
   skip_forgery_protection
 
@@ -63,7 +68,7 @@ class ComparisonController < ActionController::Base
   def load_dashboard
     @scenarios = DemoComparison::SCENARIOS
     @dataset = DemoComparison::Dataset.profile
-    @databases = DemoComparison::Database.available
+    @databases = DemoComparison::Database.datasets
   end
 
   def scenario

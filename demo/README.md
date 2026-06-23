@@ -34,7 +34,10 @@ bin/rails server          # http://localhost:3000
 ## The page
 
 - **Dataset switcher** (top) — pick which generated database to run against; the
-  app reconnects in place. Row counts update to match.
+  app reconnects in place and row counts update. It lists every standard scale
+  with its rough speedup; ones you haven't generated yet are shown disabled with
+  a one-line command to create them. The bigger the dataset, the more dramatic
+  the win (medium ≈ 50×, xlarge ≈ thousands×).
 - **Three scenarios** of increasing cost, each self-contained:
 
   | Scenario | Complexity | Depends on `cast_info`? |
