@@ -166,30 +166,53 @@ small precomputed table.
 
 ---
 
-## 6. Refresh on write
+## 6. Refresh on write — the payoff
 
-This is the heart of the gem. Write to a `depends_on` model and the view refreshes
-itself in the background — **reads never block on it**:
+This is the whole point, and the best part: **you do nothing**. A normal write to a
+`depends_on` model anywhere in your app schedules the refresh automatically; a
+background worker brings the view up to date on its own. You never call `refresh!`,
+and reads never block on it.
 
 ```ruby
+RegionRevenue.where(region: "west").pick(:revenue) # => 300
+
+# A normal write, somewhere in a request. That's the only line your code runs.
 Sale.create!(region: "west", amount: 400)
-
-RegionRevenue.dirty?                               # => true  (maintenance pending)
-RegionRevenue.where(region: "west").pick(:revenue) # => 300   (previous snapshot)
 ```
 
-The view is marked dirty the moment the write commits, but the cache still serves
-the last good snapshot until maintenance runs. Once it does, the affected
-partition reflects the change:
+The moment the write commits the view is marked dirty and a refresh is scheduled,
+but the cache keeps serving the last good snapshot — reads stay fast and never wait:
 
 ```ruby
-# In production this happens on a background thread or job worker. In a test you
-# can force it synchronously:
-ActiveRecord::Materialized::AsyncRefresher.flush!
-
-RegionRevenue.dirty?                               # => false
-RegionRevenue.where(region: "west").pick(:revenue) # => 700
+RegionRevenue.dirty?                               # => true  (refresh pending in the background)
+RegionRevenue.where(region: "west").pick(:revenue) # => 300   (previous snapshot, served instantly)
 ```
+
+Then, **with no further action from you**, the scheduled refresh runs and the view
+catches up:
+
+```ruby
+# ...a moment later, after the background refresh has run on its own:
+RegionRevenue.dirty?                               # => false
+RegionRevenue.where(region: "west").pick(:revenue) # => 700   (fresh, automatically)
+```
+
+That window between the write and the refresh is the same eventual-consistency
+trade-off as PostgreSQL's `REFRESH MATERIALIZED VIEW CONCURRENTLY` — reads are
+always fast and always correct-as-of the last refresh.
+
+**Who runs the refresh?** By default, a debounced in-process background thread. In
+production, point it at your job queue so the work runs on your workers:
+
+```ruby
+# config/initializers/activerecord_materialized.rb
+config.refresh_dispatcher = :active_job   # Sidekiq, GoodJob, Solid Queue, …
+```
+
+Either way the contract is identical: **the write schedules the refresh; you don't.**
+(The repo's tutorial spec proves this end to end — it makes a write, runs the
+auto-enqueued `RefreshJob`, and asserts the view is fresh, without ever calling
+`refresh!`.)
 
 Because `revenue`/`sales_count` are **distributive** aggregates (`SUM`/`COUNT`),
 the gem applies a signed delta straight to the `west` row — it does not re-read the
