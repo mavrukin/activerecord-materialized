@@ -9,7 +9,7 @@
 
 **Materialized views for Rails apps on databases that don't have them** — precompute an expensive query into a cache table, refresh it in the background when the underlying data changes, and read it through a transparent ActiveRecord API.
 
-[![Gem Version](https://img.shields.io/gem/v/activerecord-materialized.svg)](https://rubygems.org/gems/activerecord-materialized)
+[![Gem Version](https://img.shields.io/gem/v/activerecord-materialized?logo=rubygems&label=gem)](https://rubygems.org/gems/activerecord-materialized)
 [![CI](https://github.com/mavrukin/activerecord-materialized/actions/workflows/ci.yml/badge.svg)](https://github.com/mavrukin/activerecord-materialized/actions/workflows/ci.yml)
 [![Docs](https://img.shields.io/badge/docs-rubydoc.info-blue.svg)](https://rubydoc.info/gems/activerecord-materialized)
 [![Ruby](https://img.shields.io/badge/ruby-%3E%3D%203.4-red)](activerecord-materialized.gemspec)
