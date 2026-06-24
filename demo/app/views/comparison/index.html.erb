@@ -61,19 +61,19 @@
     </details>
     <div class="actions">
       <%= form_with url: compare_path(scenario.key), method: :post do %>
-        <button class="primary" type="submit">&#9654;&nbsp; Compare raw vs view</button>
+        <button class="primary" type="submit" data-busy="Running the query…">&#9654;&nbsp; Compare raw vs view</button>
       <% end %>
       <%= form_with url: refresh_path(scenario.key), method: :post do %>
-        <button type="submit">Build / refresh</button>
+        <button type="submit" data-busy="Materializing…">Build / refresh</button>
       <% end %>
       <% if scenario.affected_by_mutation? %>
         <%= form_with url: mutate_path(scenario.key), method: :post do %>
-          <button type="submit">Insert cast rows</button>
+          <button type="submit" data-busy="Inserting…">Insert cast rows</button>
         <% end %>
       <% end %>
       <% if scenario.view_class.materialized? %>
         <%= form_with url: reset_path(scenario.key), method: :post do %>
-          <button class="ghost" type="submit">Reset to cold</button>
+          <button class="ghost" type="submit" data-busy="Dropping cache…">Reset to cold</button>
         <% end %>
       <% end %>
     </div>
