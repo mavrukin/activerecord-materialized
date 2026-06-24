@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "spec_helper"
+require "active_job"
+require "activerecord/materialized/refresh_job"
 
 # Executes the code from docs/getting-started.md end to end so the tutorial's
 # examples are guaranteed to work. The model, view, and asserted numbers here
@@ -67,19 +69,39 @@ RSpec.describe GettingStartedTutorial, :integration do
     expect(region_revenue.where(region: "east").pick(:sales_count)).to eq(1)
   end
 
-  it "refreshes transparently on write after the dependency commits" do
-    region_revenue.rebuild!(confirm: true)
+  # The headline scenario: a write auto-refreshes the view in the background —
+  # the app code never calls refresh!/rebuild!. Demonstrated with the ActiveJob
+  # dispatcher so the "background worker" is deterministic; the in-process default
+  # behaves the same on a debounced thread.
+  context "with the :active_job dispatcher (a background worker)" do
+    include ActiveJob::TestHelper
 
-    Sale.create!(region: "west", amount: 400)
+    around do |example|
+      previous_adapter = ActiveJob::Base.queue_adapter
+      ActiveJob::Base.queue_adapter = :test
+      config = ActiveRecord::Materialized.configuration
+      previous_dispatcher = config.refresh_dispatcher
+      config.refresh_dispatcher = :active_job
+      example.run
+      config.refresh_dispatcher = previous_dispatcher
+      ActiveJob::Base.queue_adapter = previous_adapter
+    end
 
-    # Dirty immediately; the cache still shows the previous snapshot until refresh.
-    expect(region_revenue.dirty?).to be(true)
-    expect(region_revenue.where(region: "west").pick(:revenue)).to eq(300)
+    it "refreshes itself in the background after a write — no manual refresh" do
+      region_revenue.rebuild!(confirm: true)
+      expect(region_revenue.where(region: "west").pick(:revenue)).to eq(300)
 
-    ActiveRecord::Materialized::AsyncRefresher.flush!
+      # Just a normal write. The gem enqueues a refresh automatically.
+      Sale.create!(region: "west", amount: 400)
+      expect(region_revenue.dirty?).to be(true)                              # pending in the background
+      expect(region_revenue.where(region: "west").pick(:revenue)).to eq(300) # previous snapshot, still fast
 
-    expect(region_revenue.dirty?).to be(false)
-    expect(region_revenue.where(region: "west").pick(:revenue)).to eq(700)
+      # The worker runs the auto-enqueued job. Nothing here calls refresh!/rebuild!.
+      perform_enqueued_jobs
+
+      expect(region_revenue.dirty?).to be(false)
+      expect(region_revenue.where(region: "west").pick(:revenue)).to eq(700) # fresh, on its own
+    end
   end
 
   it "refreshes only when stale via refresh_if_stale!" do
