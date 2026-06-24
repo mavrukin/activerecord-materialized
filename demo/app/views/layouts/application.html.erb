@@ -72,6 +72,17 @@
     button.primary { background: var(--crimson); border-color: var(--crimson); color: #fff; font-weight: 600; }
     button.ghost { color: var(--muted); border-style: dashed; }
 
+    /* While a form POST is in flight (a slow raw query, a rebuild, …) the page
+       reloads on response, so signal "working" and block double-submits. */
+    body.busy { cursor: progress; }
+    body.busy .actions button:not(.loading), body.busy .dbform { opacity: .5; pointer-events: none; }
+    button.loading { cursor: progress; }
+    button[disabled] { cursor: progress; }
+    .spinner { display: inline-block; width: .85em; height: .85em; vertical-align: -.12em;
+               border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%;
+               animation: spin .6s linear infinite; margin-right: .35em; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
     .compare { margin-top: 1.1rem; border-top: 1px dashed var(--line); padding-top: 1rem; }
     .verdict { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-bottom: .8rem; }
     .badge { font-weight: 700; padding: .2rem .6rem; border-radius: 8px; font-size: .95rem; }
@@ -99,11 +110,45 @@
              white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
     th { color: var(--muted); font-weight: 600; }
     .rmore { color: var(--muted); font-size: .8rem; margin-top: .4rem; }
+
+    #progress { position: fixed; top: 0; left: 0; height: 3px; width: 0; background: var(--crimson);
+                box-shadow: 0 0 8px var(--crimson); z-index: 9999; transition: width .2s ease; }
+    body.busy #progress { width: 92%; transition: width 12s cubic-bezier(.1,.7,.1,1); }
   </style>
 </head>
 <body>
+  <div id="progress"></div>
   <main>
     <%= yield %>
   </main>
+  <script>
+    // The action buttons submit ordinary form POSTs (a slow raw query or a
+    // rebuild can take seconds), then the page reloads. Show a spinner on the
+    // clicked button and a top progress bar so it's clear something is running,
+    // and block double-submits until the new page arrives.
+    (function () {
+      document.addEventListener("submit", function (event) {
+        var form = event.target;
+        if (!form.matches(".actions form, .dbform")) return;
+
+        var button = event.submitter || form.querySelector("button");
+        if (button) {
+          var busyLabel = button.dataset.busy || "Working…";
+          button.innerHTML = '<span class="spinner"></span>' + busyLabel;
+          button.classList.add("loading");
+        }
+        document.body.classList.add("busy");
+        // Disable after submission is captured so the request still goes out.
+        setTimeout(function () {
+          document.querySelectorAll(".actions button, .dbform button, .dbform select")
+            .forEach(function (el) { el.disabled = true; });
+        }, 0);
+      });
+      // Restore on browser back/forward (bfcache) so controls aren't left busy.
+      window.addEventListener("pageshow", function (e) {
+        if (e.persisted) { document.body.classList.remove("busy"); }
+      });
+    })();
+  </script>
 </body>
 </html>
