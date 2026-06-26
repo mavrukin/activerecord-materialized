@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Features
+
+- Observability via `ActiveSupport::Notifications`: the read, refresh, and maintenance lifecycle points now emit documented events (`read.active_record_materialized`, `refresh.active_record_materialized`, `maintenance.active_record_materialized`) with stable payloads — cache-hit vs read-through and staleness on reads; duration, mode, partitions recomputed and outcome on refreshes; and the maintenance path plus a **widen-to-full** signal on writes. No runtime dependency on a telemetry vendor; read events are emitted only when a subscriber is attached. See the [Observability](README.md#observability) docs.
+
 ## 0.1.0 (2026-06-18)
 
 Initial release.

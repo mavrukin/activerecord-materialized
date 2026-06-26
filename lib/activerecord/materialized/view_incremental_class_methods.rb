@@ -86,30 +86,7 @@ module ActiveRecord
 
         sig { params(change: WriteChange).void }
         def record_write_change!(change)
-          return record_summary_delta!(change) if delta_maintaining?
-          return unless incrementally_maintainable?
-
-          delta = MaintenanceDeltaBuilder.new(change, maintenance_key_columns).build
-          record_write_delta!(delta)
-
-          # On a cold view the written partitions are no longer current; drop them
-          # from the fresh set until re-maintained.
-          return if view_class.materialized? || delta.full_partition?
-
-          PartitionState.new(view_class).mark_stale!(delta.key_tuples)
-        end
-
-        sig { params(change: WriteChange).void }
-        def record_summary_delta!(change)
-          summary = SummaryDeltaBuilder.new(change, aggregate_analysis, maintenance_key_columns).build
-          MaintenanceStore.new(view_class).merge!(summary) unless summary.empty?
-        end
-
-        sig { params(delta: MaintenanceDelta).void }
-        def record_write_delta!(delta)
-          return unless incrementally_maintainable?
-
-          MaintenanceStore.new(view_class).merge!(delta)
+          WriteMaintenance.new(view_class).record!(change)
         end
 
         sig { returns(T::Array[String]) }
