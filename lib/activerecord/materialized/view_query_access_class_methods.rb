@@ -93,64 +93,34 @@ module ActiveRecord
 
         sig { params(args: T.untyped).returns(T.untyped) }
         def all(*args)
-          read_scope.all(*args)
+          read_router.scope.all(*args)
         end
 
         sig { params(args: T.untyped).returns(T.untyped) }
         def where(*args)
-          partition_scope(args).where(*args)
+          read_router.partition_scope(args).where(*args)
         end
 
         sig { params(args: T.untyped).returns(T.untyped) }
         def find(*args)
-          read_scope.find(*args)
+          read_router.scope.find(*args)
         end
 
         sig { params(args: T.untyped).returns(T.untyped) }
         def find_by(*args)
-          partition_scope(args).find_by(*args)
+          read_router.partition_scope(args).find_by(*args)
         end
 
         sig { params(args: T.untyped).returns(T.untyped) }
         def count(*args)
-          read_scope.count(*args)
+          read_router.scope.count(*args)
         end
 
         private
 
-        sig { returns(T.untyped) }
-        def read_scope
-          materialized? ? cache_scope : cold_scope
-        end
-
-        # Per-partition fast path for keyed reads: serve fresh partitions from the
-        # cache, otherwise read through and enqueue maintenance (populate-on-read).
-        sig { params(args: T::Array[T.untyped]).returns(T.untyped) }
-        def partition_scope(args)
-          return cache_scope if materialized?
-
-          keys = PartitionState.keys_from(view_class, args)
-          return cold_scope if keys.nil?
-          return cache_scope if PartitionState.new(view_class).all_fresh?(keys)
-
-          enqueue_partition_maintenance(keys)
-          cold_scope
-        end
-
-        sig { returns(T.untyped) }
-        def cache_scope
-          T.unsafe(view_class).unscoped
-        end
-
-        sig { returns(T.untyped) }
-        def cold_scope
-          ColdRead.new(view_class).scope
-        end
-
-        sig { params(keys: T::Array[T.untyped]).void }
-        def enqueue_partition_maintenance(keys)
-          MaintenanceStore.new(view_class).merge!(MaintenanceDelta.scoped(keys))
-          RefreshScheduler.schedule(view_class)
+        sig { returns(ReadRouter) }
+        def read_router
+          ReadRouter.new(view_class)
         end
       end
 

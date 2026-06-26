@@ -24,7 +24,10 @@ module ActiveRecord
       # Full materialization — the only path that scans all base data.
       sig { returns(RefreshResult) }
       def rebuild!
-        run_cycle(-> { perform_rebuild! })
+        Instrumentation.refresh(view_class, operation: :rebuild) do |payload|
+          payload[:mode] = :full
+          run_cycle(-> { perform_rebuild! })
+        end
       rescue StandardError => e
         fail_refresh!(e)
       end
@@ -32,9 +35,11 @@ module ActiveRecord
       # Incremental maintenance only; a no-op when the view is not maintainable.
       sig { returns(RefreshResult) }
       def refresh!
-        return RefreshResult.skipped(view_class) unless maintainable?
+        Instrumentation.refresh(view_class, operation: :incremental) do |payload|
+          next RefreshResult.skipped(view_class) unless maintainable?
 
-        run_cycle(-> { incremental_refresh! })
+          run_cycle(-> { IncrementalRefresh.new(view_class, payload).call })
+        end
       rescue StandardError => e
         fail_refresh!(e)
       end
@@ -76,31 +81,6 @@ module ActiveRecord
         # Fully materialized now, so the cold-view partition exceptions no longer apply.
         PartitionState.new(view_class).reset!
         row_count
-      end
-
-      sig { returns(Integer) }
-      def incremental_refresh!
-        ensure_cache_table!
-
-        store = MaintenanceStore.new(view_class)
-        pending = store.pending
-        return apply_summary_delta!(store, pending) if pending.is_a?(SummaryDelta)
-
-        IncrementalMaintainer.new(view_class).maintain!(view_class.connection, view_class.table_name)
-      end
-
-      # Cheap DDL so partition maintenance has somewhere to write — never a populate.
-      sig { void }
-      def ensure_cache_table!
-        return if view_class.table_exists?
-
-        CacheTableSchema.ensure_table!(view_class, view_class.resolved_source)
-      end
-
-      sig { params(store: MaintenanceStore, summary: SummaryDelta).returns(Integer) }
-      def apply_summary_delta!(store, summary)
-        store.clear!
-        DeltaMaintainer.new(view_class).apply!(summary)
       end
 
       sig { params(error: StandardError).returns(T.noreturn) }

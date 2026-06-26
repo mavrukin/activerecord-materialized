@@ -22,4 +22,21 @@ module MaterializedViewHelpers
   def write_change(record, operation)
     ActiveRecord::Materialized::WriteChange.from_record(record, operation)
   end
+
+  # Record a committed write to the items table the way a dependency callback
+  # would: create the row, then hand the change to the view for maintenance.
+  def record_write(view_class, category, amount)
+    item = Item.create!(category: category, amount: amount)
+    view_class.record_write_change!(write_change(item, :create))
+    item
+  end
+
+  # Capture every ActiveSupport::Notifications event under `name` fired during
+  # the block, as an array of ActiveSupport::Notifications::Event.
+  def capture_events(name, &block)
+    events = []
+    callback = ->(*args) { events << ActiveSupport::Notifications::Event.new(*args) }
+    ActiveSupport::Notifications.subscribed(callback, name, &block)
+    events
+  end
 end

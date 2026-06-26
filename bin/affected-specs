@@ -40,7 +40,12 @@ SPEC_OVERRIDES = {
   "view_incremental_class_methods" => %w[view_spec.rb incremental_maintainer_spec.rb partition_state_spec.rb
                                          delta_maintainer_spec.rb],
   "view_query_access_class_methods" => %w[view_spec.rb cold_read_spec.rb partition_state_spec.rb],
-  "refresher" => %w[refresher_spec.rb partition_state_spec.rb delta_maintainer_spec.rb],
+  "refresher" => %w[refresher_spec.rb partition_state_spec.rb delta_maintainer_spec.rb instrumentation_spec.rb],
+  "incremental_refresh" => %w[refresher_spec.rb incremental_maintainer_spec.rb delta_maintainer_spec.rb
+                              instrumentation_spec.rb],
+  "read_router" => %w[view_spec.rb cold_read_spec.rb partition_state_spec.rb instrumentation_spec.rb],
+  "write_maintenance" => %w[incremental_maintainer_spec.rb partition_state_spec.rb delta_maintainer_spec.rb
+                            view_spec.rb instrumentation_spec.rb],
   "view_refresh_policy_class_methods" => %w[view_spec.rb view_refresh_on_change_spec.rb cold_read_spec.rb],
   "refresh_callbacks" => %w[refresher_spec.rb],
   "refresh_result" => %w[refresher_spec.rb],
