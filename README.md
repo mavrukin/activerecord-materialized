@@ -206,7 +206,7 @@ This gem applies decades of materialized-view and incremental-maintenance resear
 - **Atomic table swap on bootstrap only** — initial full materialization + rename when the cache is first built or on `refresh_mode :full`
 - **Debounced async refresh** — coalesce rapid writes (PostgreSQL NOTIFY + worker pattern)
 - **ActiveJob integration** — offload refresh to Sidekiq, GoodJob, Solid Queue, etc.
-- **Pluggable change sources** — `depends_on` models with ActiveRecord commit callbacks by default, or feed changes from a custom source (bulk loads, raw SQL, other services) through the public ingestion API
+- **Pluggable change sources** — `depends_on` models with ActiveRecord commit callbacks by default, or feed changes from a custom source (bulk loads, raw SQL, other services) through the public ingestion API — including CDC / external change streams via `ingest_change`
 - **Metadata table** — `last_refreshed_at`, `dirty`, `row_count`, `refresh_duration_ms`, errors
 - **Staleness safety net** — optional `max_staleness` + rake tasks for cron-driven refresh
 - **Rails generators** — `activerecord_materialized:install`, `:view`, and `:migration` (cache-table migration inferred from the source relation)
@@ -446,6 +446,48 @@ expects, and provides:
 
 The built-in callback tracker (`DependencyTrackable`) is itself implemented on top
 of `publish_write_change!` — a custom adapter is no different.
+
+### Driving maintenance from CDC / an external change stream
+
+Model callbacks only observe writes that go through the app's ActiveRecord layer.
+The mechanism that captures *every* committed change — regardless of who wrote it
+(app, raw SQL, bulk loaders, other services) — is database **Change Data Capture**:
+consuming the binlog / WAL via a Debezium- or Maxwell-style pipeline. `ingest_change`
+is the descriptor-oriented entry point for wiring such a stream to the engine,
+without the gem depending on any specific CDC tool. Views fed this way declare
+`change_source :none`.
+
+```ruby
+# A change-stream consumer relays each committed change. Normalize your stream's
+# event shape to this call; nothing here is tied to a particular CDC system.
+consumer.each do |event|
+  ActiveRecord::Materialized.ingest_change(
+    table:          event.fetch("table"),
+    operation:      event.fetch("op"),   # :create / :update / :destroy
+    key_attributes: event["key"],        # the GROUP BY columns of the row, if known
+    before:         event["before"],     # optional pre-image  (:update / :destroy)
+    after:          event["after"]       # optional post-image (:create / :update)
+  )
+end
+```
+
+**Delivery semantics** the engine relies on (so a real-world stream just works):
+
+- **At-least-once is fine.** An externally-fed view recomputes its affected
+  partitions, so a redelivered change converges — it never double-counts.
+- **Out-of-order is tolerable.** Partitions are recomputed from the source, so
+  events need not arrive in commit order.
+- **Key tuples are optional.** `key_attributes` (or a full `before`/`after` image)
+  scopes the recompute to the affected partitions; omit them and the change widens
+  to a full recompute — always correct, just less efficient. This is the knob to
+  reach for when your stream can't reliably supply the `GROUP BY` columns. A
+  partition-moving `:update` needs both sides (full `before`+`after`, or
+  `key_attributes`); a lone after-image can't identify the old partition, so it
+  safely widens rather than under-scoping (relevant for minimal-image binlogs).
+
+CDC composes with callbacks (use callbacks for in-app writes and CDC for the write
+paths they miss) as long as each view has a single source: give CDC-fed views
+`change_source :none`.
 
 ---
 
