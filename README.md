@@ -45,6 +45,7 @@
 - [Getting started tutorial](#getting-started-tutorial)
 - [Quick start](#quick-start)
 - [Configuration](#configuration)
+- [Change sources](#change-sources)
 - [Observability](#observability)
 - [API reference](#api-reference)
 - [Benchmark results](#benchmark-results)
@@ -205,7 +206,7 @@ This gem applies decades of materialized-view and incremental-maintenance resear
 - **Atomic table swap on bootstrap only** — initial full materialization + rename when the cache is first built or on `refresh_mode :full`
 - **Debounced async refresh** — coalesce rapid writes (PostgreSQL NOTIFY + worker pattern)
 - **ActiveJob integration** — offload refresh to Sidekiq, GoodJob, Solid Queue, etc.
-- **Dependency tracking** — `depends_on` models; ActiveRecord commit callbacks detect writes
+- **Pluggable change sources** — `depends_on` models with ActiveRecord commit callbacks by default, or feed changes from a custom source (bulk loads, raw SQL, other services) through the public ingestion API
 - **Metadata table** — `last_refreshed_at`, `dirty`, `row_count`, `refresh_duration_ms`, errors
 - **Staleness safety net** — optional `max_staleness` + rake tasks for cron-driven refresh
 - **Rails generators** — `activerecord_materialized:install`, `:view`, and `:migration` (cache-table migration inferred from the source relation)
@@ -223,13 +224,13 @@ This gem applies decades of materialized-view and incremental-maintenance resear
 | **Maintenance scope** | Partition keys are taken from ActiveRecord change payloads when possible (`create`/`update`/`destroy` with equality on `GROUP BY` columns). Unbounded writes widen to all partitions (in-place, still no DDL). |
 | **Non-aggregate views** | Views without `GROUP BY` fall back to full refresh (`refresh_mode :full` or atomic swap). Join-heavy maintenance (Larson & Zhou) is not automatic yet. |
 | **Full refresh escape hatch** | `rebuild!(confirm: true)` (or `refresh_mode :full`) rebuilds via atomic swap — use for recovery or non-maintainable views. `refresh!` is always incremental and never rebuilds. |
-| **Table-name-only `depends_on`** | Symbol/string table names work, but refresh-on-write requires a resolvable ActiveRecord model for that table. Raw SQL writes bypass callbacks and will not trigger refresh. |
+| **Table-name-only `depends_on`** | Symbol/string table names work, but callback-based refresh-on-write requires a resolvable ActiveRecord model for that table. Raw SQL writes bypass callbacks — feed them through the ingestion API (see [Change sources](#change-sources)). |
 | **SQLite vs MySQL in dev** | The benchmark uses SQLite. Production behavior is adapter-agnostic, but test atomic swap on your target database. |
 | **In-process async default** | Default `refresh_dispatcher: :async` uses a background thread. **Use ActiveJob in production** so refresh work runs on job workers, not Puma threads. |
 | **No automatic indexes** | Cache tables are created from query results. Add indexes on cache columns you filter/sort on. |
 | **Storage** | Cache tables duplicate data. Plan disk usage accordingly. |
 | **Nested transactions** | Refresh is scheduled on the transaction where the write occurred; rollback clears pending refreshes for that transaction. |
-| **Bulk writes** | Each committed row to a `depends_on` model runs the maintenance bookkeeping once. Use `:async` (with a non-zero debounce, the default) or `:manual`, not `refresh_debounce 0` or `:immediate`. Pending scope that spans more than `max_tracked_partitions` distinct partitions collapses to one full recompute. `insert_all`/`upsert_all` **bypass** `after_commit`, so the view won't be notified — call `refresh!` (or `mark_dependencies_changed!`) yourself after a callback-skipping bulk load. |
+| **Bulk writes** | Each committed row to a `depends_on` model runs the maintenance bookkeeping once. Use `:async` (with a non-zero debounce, the default) or `:manual`, not `refresh_debounce 0` or `:immediate`. Pending scope that spans more than `max_tracked_partitions` distinct partitions collapses to one full recompute. `insert_all`/`upsert_all` **bypass** `after_commit`, so a callback-driven view won't be notified — call `ActiveRecord::Materialized.mark_dirty_for_tables!` after the bulk load to recompute it (see [Change sources](#change-sources)). |
 
 ---
 
@@ -360,11 +361,91 @@ ActiveRecord::Materialized.configure do |config|
   config.refresh_queue_name = :materialized_views
   config.default_max_staleness = 12.hours
   config.default_cold_read_strategy = :read_through  # :serve_stale or :raise
+  config.default_change_source = :callbacks          # :none to drive views from a custom source
   config.atomic_swap_refresh = true
   config.max_tracked_partitions = 1_000             # collapse to a full recompute past this
   config.metadata_table_name = "ar_materialized_view_metadata"
 end
 ```
+
+---
+
+## Change sources
+
+A **change source** is whatever tells a view its dependency data changed. The
+built-in default is ActiveRecord commit callbacks: declaring `depends_on` installs
+`after_*_commit` hooks on the model, and every committed write is published to the
+view. Callbacks are the right default for in-app writes, but they only observe
+writes that go through ActiveRecord — bulk paths (`insert_all` / `update_all`), raw
+SQL, and writes from other processes bypass them. For those, drive maintenance
+through the public ingestion API from your own change source.
+
+### The ingestion API
+
+Two module-level entry points, callable from anywhere — a job, a rake task, an
+external consumer:
+
+```ruby
+# Fine-grained: publish a specific committed write. Drives the externally-fed
+# views (change_source :none) on that table; a callback-driven view is left to its
+# own commit callbacks, so it is never maintained twice.
+ActiveRecord::Materialized.publish_write_change!(
+  ActiveRecord::Materialized::WriteChange.from_record(line_item, :create)
+)
+
+# Coarse: "something in these tables changed" — enqueues a full recompute for every
+# dependent view and schedules it. Use when you cannot describe the individual
+# write, or to recover a callback-driven view after a callback-skipping bulk load
+# (insert_all/update_all). Idempotent, so safe to call repeatedly.
+ActiveRecord::Materialized.mark_dirty_for_tables!(["line_items"])
+```
+
+### Running callback-free
+
+To drive a view entirely from an external source, turn off automatic callback
+installation — globally or per view. `depends_on` still declares the dependency
+tables (used for scoping and metadata); only the commit-callback wiring is skipped.
+
+```ruby
+# Globally, in the initializer:
+ActiveRecord::Materialized.configure { |c| c.default_change_source = :none }
+
+# Or per view — declare change_source :none before depends_on (or rely on the
+# global default) so no commit callbacks are installed for it:
+class SalesSummary < ActiveRecord::Materialized::View
+  materialized_from { ... }
+  change_source :none         # fed by an external adapter
+  depends_on :line_items      # still declared for scoping and metadata
+end
+```
+
+(Opting back in with `change_source :callbacks` re-installs callbacks for
+already-declared dependencies, so it works in either order.)
+
+Each view is fed by exactly one source, and the engine enforces it: a committed
+write reaches only the callback-driven views on the table, and a
+`publish_write_change!` call reaches only the externally-fed ones. So callback-driven
+and externally-fed views coexist safely — no view is maintained twice — even when
+they share a dependency table.
+
+### Writing a custom adapter
+
+An adapter's only job is to observe changes and call the ingestion API. The engine
+expects, and provides:
+
+- **Idempotency / at-least-once** — an externally-fed view recomputes its affected
+  partitions from the source (never the additive summary-delta path), so
+  redelivering the same change converges instead of double-counting. At-least-once
+  delivery is fine.
+- **Out-of-order tolerance** — partitions are recomputed from the source, so events
+  need not arrive in commit order.
+- **Optional key tuples** — a `WriteChange` carrying the `GROUP BY` columns scopes
+  the recompute to the affected partitions; without them it widens to a full
+  recompute (always correct, just less efficient), and `mark_dirty_for_tables!` is
+  the fully coarse form.
+
+The built-in callback tracker (`DependencyTrackable`) is itself implemented on top
+of `publish_write_change!` — a custom adapter is no different.
 
 ---
 
@@ -444,6 +525,7 @@ there is no staleness-lookup cost on the read path when nobody is listening.
 | `refresh_debounce(duration)` | Coalesce rapid writes before refreshing |
 | `refresh_mode(mode)` | `:incremental` (default) or `:full` |
 | `cold_read(strategy)` | Read behavior before the view is built: `:read_through` (default), `:serve_stale`, or `:raise` |
+| `change_source(source)` | Where this view's changes come from: `:callbacks` (default) or `:none` (fed via the ingestion API — see [Change sources](#change-sources)) |
 | `warm_up { [relations] }` | Representative queries whose partitions `warm_up!` materializes ahead of traffic |
 | `incremental_from { relation }` | Optional override for scoped maintenance relation |
 | `incremental_keys(*columns)` | Optional override for inferred `GROUP BY` keys |

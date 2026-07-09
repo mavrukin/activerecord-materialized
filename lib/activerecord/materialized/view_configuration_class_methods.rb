@@ -19,6 +19,17 @@ module ActiveRecord
         include ViewIncrementalClassMethods::ClassMethods
         include ViewRefreshPolicyClassMethods::ClassMethods
 
+        # Per-subclass DSL ivars reset to nil on inheritance so a subclass never
+        # inherits another view's configuration. (`@dependency_tables` resets to
+        # an empty list instead — see {inherited}.)
+        NIL_RESET_IVARS = T.let(
+          %i[
+            @refresh_strategy @refresh_debounce @refresh_mode @incremental_source_definition
+            @incremental_key_columns @cold_read_strategy @change_source @warm_up_definition
+          ].freeze,
+          T::Array[Symbol]
+        )
+
         sig { returns(T.class_of(View)) }
         def view_class
           T.cast(self, T.class_of(View))
@@ -28,13 +39,7 @@ module ActiveRecord
         def inherited(subclass)
           super
           T.unsafe(subclass).instance_variable_set(:@dependency_tables, [])
-          T.unsafe(subclass).instance_variable_set(:@refresh_strategy, nil)
-          T.unsafe(subclass).instance_variable_set(:@refresh_debounce, nil)
-          T.unsafe(subclass).instance_variable_set(:@refresh_mode, nil)
-          T.unsafe(subclass).instance_variable_set(:@incremental_source_definition, nil)
-          T.unsafe(subclass).instance_variable_set(:@incremental_key_columns, nil)
-          T.unsafe(subclass).instance_variable_set(:@cold_read_strategy, nil)
-          T.unsafe(subclass).instance_variable_set(:@warm_up_definition, nil)
+          NIL_RESET_IVARS.each { |ivar| T.unsafe(subclass).instance_variable_set(ivar, nil) }
         end
 
         sig { returns(String) }

@@ -23,6 +23,16 @@ module MaterializedViewHelpers
     ActiveRecord::Materialized::WriteChange.from_record(record, operation)
   end
 
+  # A view fed through the ingestion API (change_source :none) rather than commit
+  # callbacks. Pass immediate: true to refresh inline so assertions need no flush.
+  def externally_fed_view(table_name, immediate: false)
+    define_view(table_name, :item_count_by_category) do
+      change_source :none
+      depends_on :items
+      refresh_on_change(:immediate) if immediate
+    end
+  end
+
   # Record a committed write to the items table the way a dependency callback
   # would: create the row, then hand the change to the view for maintenance.
   def record_write(view_class, category, amount)

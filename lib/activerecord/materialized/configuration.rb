@@ -49,6 +49,24 @@ module ActiveRecord
       sig { returns(Symbol) }
       attr_accessor :default_cold_read_strategy
 
+      # Default change source for views: +:callbacks+ (install ActiveRecord
+      # commit callbacks on +depends_on+ models) or +:none+ (install no
+      # callbacks; drive maintenance through the public ingestion API from an
+      # external adapter). A view can override this with +change_source+.
+      # Lazily defaulted (like +max_tracked_partitions+) so it stays out of
+      # +initialize+.
+      #
+      # @return [Symbol]
+      sig { params(value: T.any(Symbol, String)).void }
+      def default_change_source=(value)
+        @default_change_source = T.let(ChangeSource.cast(value), T.nilable(Symbol))
+      end
+
+      sig { returns(Symbol) }
+      def default_change_source
+        @default_change_source ||= T.let(ChangeSource::CALLBACKS, T.nilable(Symbol))
+      end
+
       # Cap on distinct partitions tracked in a view's pending maintenance before
       # it collapses to a single full recompute. Bounds the per-write cost of a
       # bulk write that spans many partitions. Defaults to 1000.

@@ -28,7 +28,7 @@ module ActiveRecord
           normalized.each do |table|
             bucket = T.cast(dependency_index[table], T::Array[ViewClass])
             bucket << view_class unless bucket.include?(view_class)
-            subscribe_source_table!(table)
+            subscribe_source_table!(table, view_class)
           end
         end
 
@@ -37,17 +37,38 @@ module ActiveRecord
           T.must(dependency_index[normalize_table(table)])
         end
 
-        sig { params(change: WriteChange).void }
-        def publish_write_change!(change)
+        # Records a committed write and schedules refresh for the affected views.
+        # `source` identifies the publisher so no view is maintained by two sources:
+        # a callback publish (`:callbacks`) drives only callback-backed views, and an
+        # explicit ingestion-API publish (`nil`) drives only externally-fed views.
+        sig { params(change: WriteChange, source: T.nilable(Symbol)).void }
+        def publish_write_change!(change, source: nil)
           affected_views([change.table_name]).each do |view|
+            next unless delivers_to?(view, source)
+
             view.record_write_change!(change)
             RefreshScheduler.schedule(view)
           end
         end
 
+        # Coarse ingestion signal: something changed in these tables but the caller
+        # cannot describe the individual write. Enqueues a full recompute (the only
+        # correct scope without a partition key) and schedules it — idempotent, so
+        # safe to call repeatedly and after callback-skipping bulk loads.
         sig { params(tables: T::Array[String]).void }
         def mark_dirty_for_tables!(tables)
-          affected_views(tables).each(&:mark_dependencies_changed!)
+          affected_views(tables).each do |view|
+            MaintenanceStore.new(view).merge!(MaintenanceDelta.full_partition)
+            RefreshScheduler.schedule(view)
+          end
+        end
+
+        # (Re)installs the built-in callback tracker for a view's already-declared
+        # dependency tables. Invoked by `change_source :callbacks` so opting in works
+        # whether it precedes or follows `depends_on`.
+        sig { params(view_class: ViewClass).void }
+        def install_callbacks_for(view_class)
+          view_class.dependency_tables.each { |table| subscribe_source_table!(table, view_class) }
         end
 
         sig { void }
@@ -64,6 +85,16 @@ module ActiveRecord
             Hash.new { |hash, key| hash[key] = [] },
             T.nilable(T::Hash[String, T::Array[ViewClass]])
           )
+        end
+
+        # A callback publish reaches callback-backed views; any other (external)
+        # publish reaches views that are NOT callback-backed. This keeps each view
+        # tied to a single source, so the additive summary-delta path is never
+        # applied twice for one write.
+        sig { params(view: ViewClass, source: T.nilable(Symbol)).returns(T::Boolean) }
+        def delivers_to?(view, source)
+          callback_backed = view.resolved_change_source == ChangeSource::CALLBACKS
+          source == ChangeSource::CALLBACKS ? callback_backed : !callback_backed
         end
 
         sig { params(tables: T::Array[String]).returns(T::Array[ViewClass]) }
@@ -85,8 +116,14 @@ module ActiveRecord
           [normalize_table(entry)]
         end
 
-        sig { params(table: String).void }
-        def subscribe_source_table!(table)
+        # Installs the built-in commit-callback tracker for a table's model, unless
+        # the view opts out of callbacks (`change_source :none` / a `:none` global
+        # default) — in which case the dependency is still indexed for scoping and
+        # metadata, but its writes are expected to arrive via the ingestion API.
+        sig { params(table: String, view_class: ViewClass).void }
+        def subscribe_source_table!(table, view_class)
+          return unless view_class.resolved_change_source == ChangeSource::CALLBACKS
+
           model = TableModelRegistry.resolve(table)
           ActiveRecord::Materialized::DependencyTrackable.subscribe(model) if model
         end

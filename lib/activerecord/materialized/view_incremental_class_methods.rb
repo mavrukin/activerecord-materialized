@@ -73,10 +73,16 @@ module ActiveRecord
         end
 
         # A warm view with all-distributive aggregates uses summary-delta IVM;
-        # otherwise writes drive scoped recompute.
+        # otherwise writes drive scoped recompute. Restricted to callback-backed
+        # views: their in-app writes arrive exactly once, so applying signed deltas
+        # is safe. Externally fed views recompute their partitions instead, so
+        # at-least-once or duplicate delivery converges rather than double-counting.
         sig { returns(T::Boolean) }
         def delta_maintaining?
-          resolved_refresh_mode != :full && view_class.materialized? && aggregate_analysis.delta_maintainable?
+          resolved_refresh_mode != :full &&
+            view_class.resolved_change_source == ChangeSource::CALLBACKS &&
+            view_class.materialized? &&
+            aggregate_analysis.delta_maintainable?
         end
 
         sig { returns(T::Boolean) }
