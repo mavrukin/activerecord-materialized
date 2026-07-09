@@ -29,7 +29,8 @@ module ActiveRecord
 
       sig { params(change: WriteChange).void }
       def record_scoped_recompute!(change)
-        delta = MaintenanceDeltaBuilder.new(change, @view_class.maintenance_key_columns).build
+        resolver = @view_class.partition_key_resolver_for(change.table_name)
+        delta = MaintenanceDeltaBuilder.new(change, @view_class.maintenance_key_columns, resolver: resolver).build
         instrument(change, path: :scoped_recompute, partitions: delta.tracked_partition_count,
                            scope: delta.full_partition? ? :full : :scoped)
         store.merge!(delta)

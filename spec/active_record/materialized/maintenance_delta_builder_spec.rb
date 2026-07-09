@@ -50,4 +50,32 @@ RSpec.describe ActiveRecord::Materialized::MaintenanceDeltaBuilder do
 
     expect(delta.key_tuples).to contain_exactly(["games"], ["books"])
   end
+
+  describe "with a partition-key resolver (issue #61)" do
+    it "derives single-column keys from the resolver, taking precedence over the payload" do
+      # a scalar, chosen over the payload's own "books" category (resolver is authoritative)
+      expect(described_class.new(change, ["category"], resolver: ->(_c) { "US" }).build.key_tuples)
+        .to eq([["US"]])
+      # an array => multiple partitions (e.g. an update that moves a row between them)
+      expect(described_class.new(change, ["country"], resolver: ->(_c) { %w[US UK] }).build.key_tuples)
+        .to contain_exactly(["US"], ["UK"])
+      # a nil value is the NULL partition — kept, not dropped
+      expect(described_class.new(change, ["country"], resolver: ->(_c) { ["US", nil] }).build.key_tuples)
+        .to contain_exactly(["US"], [nil])
+    end
+
+    it "widens to a full recompute when the resolver yields nothing" do
+      expect(described_class.new(change, ["country"], resolver: ->(_c) {}).build.full_partition?).to be(true)
+      expect(described_class.new(change, ["country"], resolver: ->(_c) { [] }).build.full_partition?).to be(true)
+    end
+
+    it "normalizes composite keys and widens a malformed one instead of crashing" do
+      single = described_class.new(change, %w[country year], resolver: ->(_c) { ["US", 2024] }).build
+      expect(single.key_tuples).to eq([["US", 2024]]) # a single tuple
+      many = described_class.new(change, %w[country year], resolver: ->(_c) { [["US", 2024], ["UK", 2023]] }).build
+      expect(many.key_tuples).to contain_exactly(["US", 2024], ["UK", 2023]) # an array of tuples
+      scalar = described_class.new(change, %w[country year], resolver: ->(_c) { "US" }).build
+      expect(scalar.full_partition?).to be(true) # a bare scalar can't be a composite tuple => widen
+    end
+  end
 end
