@@ -25,7 +25,8 @@ module ActiveRecord
         NIL_RESET_IVARS = T.let(
           %i[
             @refresh_strategy @refresh_debounce @refresh_mode @incremental_source_definition
-            @incremental_key_columns @cold_read_strategy @change_source @warm_up_definition
+            @incremental_key_columns @partition_key_resolvers @cold_read_strategy @change_source
+            @warm_up_definition
           ].freeze,
           T::Array[Symbol]
         )

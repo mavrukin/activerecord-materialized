@@ -9,6 +9,9 @@ module ActiveRecord
       extend T::Sig
       extend T::Helpers
 
+      # Maps a dependency-table write to the partition key(s) it affects.
+      PartitionKeyResolver = T.type_alias { T.proc.params(change: WriteChange).returns(T.untyped) }
+
       sig { params(base: T.class_of(View)).void }
       def self.included(base)
         base.extend(ClassMethods)
@@ -36,6 +39,27 @@ module ActiveRecord
         sig { params(columns: T.any(Symbol, String)).void }
         def incremental_keys(*columns)
           @incremental_key_columns = T.let(columns.map(&:to_s), T.nilable(T::Array[String]))
+        end
+
+        # Maps a write on `table` to the partition key(s) it affects — for a view
+        # whose GROUP BY key lives on a joined/parent table, so the written row's own
+        # payload can't supply it. The block receives the {WriteChange} and returns
+        # the key value(s): a scalar (or array of scalars) for a single-column key, a
+        # tuple (or array of tuples) for a composite key; returning nothing falls back
+        # to a full recompute. Trades a small lookup per write for avoiding one.
+        sig { params(table: T.any(Symbol, String), block: PartitionKeyResolver).void }
+        def partition_key_for(table, &block)
+          partition_key_resolvers[table.to_s] = block
+        end
+
+        sig { params(table_name: String).returns(T.nilable(PartitionKeyResolver)) }
+        def partition_key_resolver_for(table_name)
+          partition_key_resolvers[table_name]
+        end
+
+        sig { returns(T::Hash[String, PartitionKeyResolver]) }
+        def partition_key_resolvers
+          @partition_key_resolvers ||= T.let({}, T.nilable(T::Hash[String, PartitionKeyResolver]))
         end
 
         sig { returns(RefreshMode) }

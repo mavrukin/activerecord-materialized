@@ -221,7 +221,7 @@ This gem applies decades of materialized-view and incremental-maintenance resear
 |--------|--------|
 | **Eventual consistency** | Between a write and background refresh completing, reads return the previous snapshot. Same trade-off as `REFRESH MATERIALIZED VIEW CONCURRENTLY` in PostgreSQL. |
 | **`depends_on` is required** | The gem cannot infer dependencies from a relation. Declare every model (or table) whose writes should trigger refresh. Prefer model classes (`depends_on LineItem`) so commit callbacks are wired automatically. |
-| **Maintenance scope** | Partition keys are taken from ActiveRecord change payloads when possible (`create`/`update`/`destroy` with equality on `GROUP BY` columns). Unbounded writes widen to all partitions (in-place, still no DDL). |
+| **Maintenance scope** | Partition keys are taken from ActiveRecord change payloads when possible (`create`/`update`/`destroy` with equality on `GROUP BY` columns). Unbounded writes widen to all partitions (in-place, still no DDL). When the group key lives on a joined table, configure [`partition_key_for`](#views-whose-group-key-lives-on-a-joined-table) so leaf-table writes stay scoped. |
 | **Non-aggregate views** | Views without `GROUP BY` fall back to full refresh (`refresh_mode :full` or atomic swap). Join-heavy maintenance (Larson & Zhou) is not automatic yet. |
 | **Full refresh escape hatch** | `rebuild!(confirm: true)` (or `refresh_mode :full`) rebuilds via atomic swap — use for recovery or non-maintainable views. `refresh!` is always incremental and never rebuilds. |
 | **Table-name-only `depends_on`** | Symbol/string table names work, but callback-based refresh-on-write requires a resolvable ActiveRecord model for that table. Raw SQL writes bypass callbacks — feed them through the ingestion API (see [Change sources](#change-sources)). |
@@ -347,6 +347,34 @@ class SalesSummary < ActiveRecord::Materialized::View
   # incremental_from { ... } # optional: override auto-scoped maintenance relation
 end
 ```
+
+#### Views whose group key lives on a joined table
+
+When the `GROUP BY` key lives on a **joined/parent** table, a write to the *leaf*
+dependency table can't supply it from its own change payload, so maintenance would
+widen to a full recompute. `partition_key_for` maps such a write to the partition
+key(s) it affects, so maintenance stays scoped:
+
+```ruby
+class PagesByCountry < ActiveRecord::Materialized::View
+  materialized_from do
+    Book.joins(:author).group("authors.country").select(...)
+  end
+  depends_on Book, Author
+
+  # A Book write carries author_id, not country — resolve the affected partition(s).
+  partition_key_for :books do |change|
+    author_ids = [change.before["author_id"], change.after["author_id"]].compact.uniq
+    Author.where(id: author_ids).pluck(:country)
+  end
+end
+```
+
+The block receives the `WriteChange` and returns the key value(s) — a scalar or an
+array for a single-column key, a tuple or an array of tuples for a composite key;
+returning nothing falls back to a full recompute. It trades a small indexed lookup
+per write for avoiding one. Writes to the table that *does* carry the key (here,
+`authors`) already scope automatically and need no resolver.
 
 ---
 
@@ -571,6 +599,7 @@ there is no staleness-lookup cost on the read path when nobody is listening.
 | `warm_up { [relations] }` | Representative queries whose partitions `warm_up!` materializes ahead of traffic |
 | `incremental_from { relation }` | Optional override for scoped maintenance relation |
 | `incremental_keys(*columns)` | Optional override for inferred `GROUP BY` keys |
+| `partition_key_for(table) { \|change\| ... }` | Resolve a write on a joined/leaf `table` to the affected partition key(s), so maintenance scopes instead of widening |
 | `max_staleness(duration)` | Optional time-based safety refresh via rake/cron |
 | `before_refresh` / `after_refresh` | Refresh lifecycle callbacks |
 
