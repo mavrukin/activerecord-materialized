@@ -44,6 +44,26 @@ module ActiveRecord
             ActiveRecord::Materialized.configuration.default_cold_read_strategy
         end
 
+        # Selects where this view's changes come from: +:callbacks+ (the default
+        # built-in tracker installs commit callbacks on +depends_on+ models) or
+        # +:none+ (install no callbacks; feed changes through the public
+        # ingestion API from an external adapter — e.g. a CDC stream).
+        #
+        # Setting +:callbacks+ (re)installs callbacks for any dependencies already
+        # declared, so it works regardless of whether it precedes or follows
+        # +depends_on+ — important when the global default is +:none+.
+        sig { params(source: Symbol).void }
+        def change_source(source)
+          @change_source = T.let(ChangeSource.cast(source), T.nilable(Symbol))
+          DependencyRegistry.install_callbacks_for(view_class) if @change_source == ChangeSource::CALLBACKS
+        end
+
+        sig { returns(Symbol) }
+        def resolved_change_source
+          T.let(@change_source, T.nilable(Symbol)) ||
+            ActiveRecord::Materialized.configuration.default_change_source
+        end
+
         # Queries warm_up! runs to materialize a cold view's hot partitions, e.g.:
         #   warm_up { [where(region: "us"), order(revenue: :desc).limit(50)] }
         sig { params(block: T.proc.returns(T.untyped)).void }

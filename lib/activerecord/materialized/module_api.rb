@@ -68,6 +68,33 @@ module ActiveRecord
         registered.each { |view_class| SchemaVerifier.new(view_class).verify! }
       end
 
+      # Publishes a committed dependency write from a custom change source (a
+      # CDC/replication stream, a bulk loader, another service). It drives the
+      # externally-fed views (`change_source :none`) that depend on the table;
+      # callback-driven views are left to their own commit callbacks so no view is
+      # maintained twice. To recover a callback-driven view after a callback-skipping
+      # bulk load, use {mark_dirty_for_tables!} instead.
+      #
+      # @param change [WriteChange] the committed write to publish
+      # @return [void]
+      sig { params(change: WriteChange).void }
+      def publish_write_change!(change)
+        DependencyRegistry.publish_write_change!(change)
+      end
+
+      # Coarse ingestion signal for callers that cannot describe the individual
+      # write: enqueues a full recompute for every view depending on any of
+      # +tables+ and schedules it per each view's refresh strategy (inline for
+      # +:immediate+, in the background for +:async+). Idempotent, so it is safe to
+      # call repeatedly and to recover a view after a callback-skipping bulk load.
+      #
+      # @param tables [Array<String>] dependency table names
+      # @return [void]
+      sig { params(tables: T::Array[String]).void }
+      def mark_dirty_for_tables!(tables)
+        DependencyRegistry.mark_dirty_for_tables!(tables)
+      end
+
       sig { returns(T::Boolean) }
       def atomic_swap_refresh?
         configuration.atomic_swap_refresh

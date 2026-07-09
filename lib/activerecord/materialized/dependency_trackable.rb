@@ -23,9 +23,11 @@ module ActiveRecord
         end
 
         # Invoked from the model commit callbacks; `record` is the committed instance.
+        # Publishes as the `:callbacks` source so views fed by another change source
+        # are not maintained twice.
         sig { params(record: ::ActiveRecord::Base, operation: WriteChange::Operation).void }
         def publish(record, operation)
-          DependencyRegistry.publish_write_change!(WriteChange.from_record(record, operation))
+          DependencyRegistry.publish_write_change!(WriteChange.from_record(record, operation), source: :callbacks)
         end
 
         sig { void }

@@ -284,12 +284,15 @@ read-through until it's touched.
 - **Verify schema in CI.** `bin/rails materialized:verify` raises if a cache table
   has drifted from its source relation, so you catch a missing migration early.
 - **Declare every dependency.** Refresh-on-write only fires for tables you list in
-  `depends_on`, and only for writes that go through ActiveRecord (raw SQL writes
-  bypass the commit callbacks).
+  `depends_on`. Callbacks observe only writes that go through ActiveRecord; for raw
+  SQL or other write paths, feed changes through the ingestion API
+  (`ActiveRecord::Materialized.publish_write_change!` / `mark_dirty_for_tables!`) —
+  see the [Change sources](../README.md#change-sources) docs.
 - **Bulk loads.** Stick with `:async` (non-zero debounce) or `:manual`. Note that
   `insert_all`/`upsert_all` skip `after_commit`, so the view isn't notified — call
-  `refresh!` afterwards. Maintenance spanning more than `max_tracked_partitions`
-  distinct partitions automatically collapses to one full recompute.
+  `ActiveRecord::Materialized.mark_dirty_for_tables!([...])` afterwards to recompute
+  it. Maintenance spanning more than `max_tracked_partitions` distinct partitions
+  automatically collapses to one full recompute.
 
 ```ruby
 # config/initializers/activerecord_materialized.rb
