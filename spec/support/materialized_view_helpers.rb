@@ -25,6 +25,8 @@ module MaterializedViewHelpers
 
   # A view fed through the ingestion API (change_source :none) rather than commit
   # callbacks. Pass immediate: true to refresh inline so assertions need no flush.
+  # Its commit callbacks never maintain it, so an Item.create! stands in for an
+  # out-of-band write the view does not observe.
   def externally_fed_view(table_name, immediate: false)
     define_view(table_name, :item_count_by_category) do
       change_source :none

@@ -43,4 +43,26 @@ RSpec.describe ActiveRecord::Materialized::WriteChange do
         .to raise_error(ArgumentError, /unsupported write operation/)
     end
   end
+
+  describe ".from_descriptor" do
+    it "builds a change from raw attributes and stringifies the snapshot keys" do
+      change = described_class.from_descriptor(
+        table_name: "items", operation: :update, before: { category: "a" }, after: { "category" => "b" }
+      )
+
+      expect(change.table_name).to eq("items")
+      expect(change.operation).to eq(:update)
+      expect(change.before).to eq({ "category" => "a" }) # symbol keys normalized to strings
+      expect(change.after).to eq({ "category" => "b" })
+    end
+
+    it "defaults both snapshots to empty and rejects an unsupported operation" do
+      change = described_class.from_descriptor(table_name: "items", operation: :create)
+      expect(change.before).to eq({})
+      expect(change.after).to eq({})
+
+      expect { described_class.from_descriptor(table_name: "items", operation: :touch) }
+        .to raise_error(ArgumentError, /unsupported write operation/)
+    end
+  end
 end

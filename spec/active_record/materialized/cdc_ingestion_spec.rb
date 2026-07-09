@@ -1,0 +1,97 @@
+# frozen_string_literal: true
+
+require "spec_helper"
+
+# #63 — maintenance driven from a CDC / external change stream. A consumer relays
+# normalized change descriptors to ActiveRecord::Materialized.ingest_change; the
+# view is callback-free (change_source :none) and recomputes affected partitions,
+# so at-least-once / out-of-order delivery converges. No callbacks are installed.
+# The view never observes the underlying writes itself (its callbacks are
+# filtered), so an Item.create! / update! stands in for an out-of-band write.
+module CdcIngestion
+end
+
+RSpec.describe CdcIngestion, :integration do
+  it "keeps an externally-fed view correct from a stream of change descriptors" do
+    view = externally_fed_view("mv_cdc_stream", immediate: true)
+    Item.create!(category: "books", amount: 1) # unobserved by the :none view
+    view.rebuild!(confirm: true) # cache: books=1 (item_count inferred as integer)
+    expect(view.where(category: "books").pick(:item_count)).to eq(1)
+
+    Item.create!(category: "books", amount: 5)
+    ActiveRecord::Materialized.ingest_change(table: "items", operation: :create, after: { "category" => "books" })
+
+    expect(view.where(category: "books").pick(:item_count)).to eq(2)
+  end
+
+  it "recomputes both partitions when an update moves a row across partitions" do
+    view = externally_fed_view("mv_cdc_move", immediate: true)
+    mover = Item.create!(category: "books", amount: 1)
+    Item.create!(category: "books", amount: 2)
+    view.rebuild!(confirm: true) # books=2
+    expect(view.where(category: "books").pick(:item_count)).to eq(2)
+
+    mover.update!(category: "toys") # books -> toys, relayed with full before/after images
+    ActiveRecord::Materialized.ingest_change(
+      table: "items", operation: :update, before: { "category" => "books" }, after: { "category" => "toys" }
+    )
+
+    expect(view.where(category: "books").pick(:item_count)).to eq(1) # old partition recomputed
+    expect(view.where(category: "toys").pick(:item_count)).to eq(1)  # new partition recomputed
+  end
+
+  it "widens an update to a full recompute when only a partial image is available" do
+    view = externally_fed_view("mv_cdc_partial", immediate: true)
+    mover = Item.create!(category: "books", amount: 1)
+    Item.create!(category: "toys", amount: 1)
+    view.rebuild!(confirm: true) # books=1, toys=1
+    expect(view.where(category: "books").pick(:item_count)).to eq(1)
+
+    mover.update!(category: "toys") # move, but the stream carries only the after-image
+    ActiveRecord::Materialized.ingest_change(table: "items", operation: :update, after: { "category" => "toys" })
+
+    expect(view.where(category: "books").pick(:item_count)).to be_nil # old partition recomputed away, not left stale
+    expect(view.where(category: "toys").pick(:item_count)).to eq(2)
+  end
+
+  it "scopes maintenance to the partition named by key_attributes" do
+    view = externally_fed_view("mv_cdc_keys", immediate: true)
+    Item.create!(category: "books", amount: 1)
+    Item.create!(category: "toys", amount: 1)
+    view.rebuild!(confirm: true) # books=1, toys=1
+
+    Item.create!(category: "books", amount: 2) # both partitions grow out-of-band...
+    Item.create!(category: "toys", amount: 2)
+    ActiveRecord::Materialized.ingest_change(
+      table: "items", operation: :create, key_attributes: { "category" => "books" }
+    )
+
+    expect(view.where(category: "books").pick(:item_count)).to eq(2) # ...but only books is ingested
+    expect(view.where(category: "toys").pick(:item_count)).to eq(1)  # toys NOT recomputed — scoped
+  end
+
+  it "converges under duplicate and out-of-order descriptor delivery" do
+    view = externally_fed_view("mv_cdc_idem", immediate: true)
+    Item.create!(category: "books", amount: 1)
+    view.rebuild!(confirm: true)
+
+    Item.create!(category: "books", amount: 2)
+    # An update and a duplicate create for the same key, delivered out of order.
+    ActiveRecord::Materialized.ingest_change(
+      table: "items", operation: :update, key_attributes: { "category" => "books" }
+    )
+    ActiveRecord::Materialized.ingest_change(
+      table: "items", operation: :create, key_attributes: { "category" => "books" }
+    )
+
+    expect(view.where(category: "books").pick(:item_count)).to eq(2) # not 3 or 4
+  end
+
+  it "installs no commit callbacks when maintenance is CDC-driven" do
+    allow(ActiveRecord::Materialized::DependencyTrackable).to receive(:subscribe).and_call_original
+
+    externally_fed_view("mv_cdc_no_cb")
+
+    expect(ActiveRecord::Materialized::DependencyTrackable).not_to have_received(:subscribe)
+  end
+end

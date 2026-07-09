@@ -95,6 +95,45 @@ module ActiveRecord
         DependencyRegistry.mark_dirty_for_tables!(tables)
       end
 
+      # Ingests a change described as a normalized descriptor — the CDC-friendly
+      # entry point for a consumer that has the table, operation, and (optionally)
+      # the changed key columns or full before/after images as plain data rather
+      # than an ActiveRecord object. Builds a {WriteChange} and publishes it via
+      # {publish_write_change!}, so it drives the externally-fed
+      # (+change_source :none+) views on the table; a callback-driven view is left
+      # to its own callbacks — recover one after a bulk load with
+      # {mark_dirty_for_tables!}.
+      #
+      # Supply +before+/+after+ images when the stream carries them; otherwise
+      # +key_attributes+ scopes maintenance to the affected partition(s). With
+      # neither — or a partial +:update+ image that cannot identify both the old
+      # and new partition — maintenance widens to a full recompute (always correct).
+      # See {WriteChange.from_descriptor}.
+      #
+      # @param table [String] the changed table
+      # @param operation [Symbol] +:create+, +:update+, or +:destroy+
+      # @param key_attributes [Hash, nil] the GROUP BY key columns of the changed row
+      # @param before [Hash, nil] pre-image, for +:update+/+:destroy+
+      # @param after [Hash, nil] post-image, for +:create+/+:update+
+      # @return [void]
+      sig do
+        params(
+          table: String,
+          operation: WriteChange::Operation,
+          key_attributes: T.nilable(WriteChange::AttributeInput),
+          before: T.nilable(WriteChange::AttributeInput),
+          after: T.nilable(WriteChange::AttributeInput)
+        ).void
+      end
+      def ingest_change(table:, operation:, key_attributes: nil, before: nil, after: nil)
+        publish_write_change!(
+          WriteChange.from_descriptor(
+            table_name: table, operation: operation,
+            key_attributes: key_attributes, before: before, after: after
+          )
+        )
+      end
+
       sig { returns(T::Boolean) }
       def atomic_swap_refresh?
         configuration.atomic_swap_refresh
