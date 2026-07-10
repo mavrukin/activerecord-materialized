@@ -12,6 +12,8 @@ class CreateArMaterializedViewMetadata < ActiveRecord::Migration[<%= ActiveRecor
       t.integer :refresh_duration_ms
       t.text :last_error
       t.text :maintenance_payload
+      t.datetime :last_reconciled_at
+      t.integer :reconciled_partition_count
 
       t.timestamps
     end

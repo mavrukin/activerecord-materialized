@@ -16,9 +16,7 @@ module ActiveRecord
         def ensure_table!(view_class)
           connection = view_class.connection
           create_metadata_table!(connection) unless MetadataRecord.table_exists?
-          ensure_dirty_column!(connection)
-          ensure_maintenance_payload_column!(connection)
-          ensure_warm_column!(connection)
+          ensure_columns!(connection)
           MetadataRecord.reset_column_information
         end
 
@@ -34,48 +32,32 @@ module ActiveRecord
             t.integer :refresh_duration_ms
             t.text :last_error
             t.text :maintenance_payload
+            t.datetime :last_reconciled_at
+            t.integer :reconciled_partition_count
             t.timestamps
           end
           connection.add_index(::ActiveRecord::Materialized.metadata_table_name, :view_name, unique: true)
         end
 
+        # Lazily add columns introduced after a table was first provisioned, so an app
+        # migrated from an earlier version picks them up without a new migration.
         sig { params(connection: Connection).void }
-        def ensure_dirty_column!(connection)
+        def ensure_columns!(connection)
           return unless MetadataRecord.table_exists?
-          return if MetadataRecord.column_names.include?("dirty")
 
-          connection.add_column(
-            ::ActiveRecord::Materialized.metadata_table_name,
-            :dirty,
-            :boolean,
-            default: true,
-            null: false
-          )
+          ensure_column!(connection, :dirty, :boolean, default: true, null: false)
+          ensure_column!(connection, :warm, :boolean, default: false, null: false)
+          ensure_column!(connection, :maintenance_payload, :text)
+          ensure_column!(connection, :last_reconciled_at, :datetime)
+          ensure_column!(connection, :reconciled_partition_count, :integer)
         end
 
-        sig { params(connection: Connection).void }
-        def ensure_maintenance_payload_column!(connection)
-          return unless MetadataRecord.table_exists?
-          return if MetadataRecord.column_names.include?("maintenance_payload")
+        sig { params(connection: Connection, name: Symbol, type: Symbol, default: T.untyped, null: T::Boolean).void }
+        def ensure_column!(connection, name, type, default: nil, null: true)
+          return if MetadataRecord.column_names.include?(name.to_s)
 
           connection.add_column(
-            ::ActiveRecord::Materialized.metadata_table_name,
-            :maintenance_payload,
-            :text
-          )
-        end
-
-        sig { params(connection: Connection).void }
-        def ensure_warm_column!(connection)
-          return unless MetadataRecord.table_exists?
-          return if MetadataRecord.column_names.include?("warm")
-
-          connection.add_column(
-            ::ActiveRecord::Materialized.metadata_table_name,
-            :warm,
-            :boolean,
-            default: false,
-            null: false
+            ::ActiveRecord::Materialized.metadata_table_name, name, type, default: default, null: null
           )
         end
       end

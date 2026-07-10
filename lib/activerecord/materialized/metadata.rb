@@ -3,6 +3,7 @@
 
 require_relative "metadata/schema"
 require_relative "metadata/maintenance_payload"
+require_relative "metadata/reconciliation"
 require_relative "metadata/timestamps"
 
 module ActiveRecord
@@ -81,8 +82,10 @@ module ActiveRecord
         return true if last_refreshed_at.nil?
         return false if max_staleness.nil?
 
-        refreshed_at = T.must(last_refreshed_at)
-        refreshed_at.to_time < Timestamps.threshold(max_staleness).to_time
+        # A reconcile verifies contents against the source, so it resets the staleness
+        # clock like a refresh — measure age from whichever happened later.
+        freshest = [T.must(last_refreshed_at), record.last_reconciled_at].compact.max_by(&:to_time)
+        T.must(freshest).to_time < Timestamps.threshold(max_staleness).to_time
       end
 
       sig { void }

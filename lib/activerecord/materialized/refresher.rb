@@ -12,6 +12,13 @@ module ActiveRecord
       # Raised when a refresh or rebuild fails.
       class RefreshError < StandardError; end
 
+      # Raised when a cycle can't start because another is already running for the
+      # view. A subclass of {RefreshError} so existing rescues still catch it, but
+      # distinct so a caller (reconciliation) can treat an overlap as a benign,
+      # retryable defer — and so it is re-raised without {#fail_refresh!}, which would
+      # otherwise mark the view failed and clear the *live* cycle's `refreshing` guard.
+      class AlreadyRefreshingError < RefreshError; end
+
       sig { returns(ViewClass) }
       attr_reader :view_class
 
@@ -28,6 +35,8 @@ module ActiveRecord
           payload[:mode] = :full
           run_cycle(-> { perform_rebuild! })
         end
+      rescue AlreadyRefreshingError
+        raise # a live cycle owns the guard; don't fail_refresh! it (that would clear the guard)
       rescue StandardError => e
         fail_refresh!(e)
       end
@@ -40,6 +49,8 @@ module ActiveRecord
 
           run_cycle(-> { IncrementalRefresh.new(view_class, payload).call })
         end
+      rescue AlreadyRefreshingError
+        raise # a live cycle owns the guard; don't fail_refresh! it (that would clear the guard)
       rescue StandardError => e
         fail_refresh!(e)
       end
@@ -62,7 +73,7 @@ module ActiveRecord
 
       sig { params(operation: T.proc.returns(Integer)).returns(RefreshResult) }
       def run_cycle(operation)
-        raise RefreshError, "#{view_class.name} is already refreshing" if metadata.refreshing?
+        raise AlreadyRefreshingError, "#{view_class.name} is already refreshing" if metadata.refreshing?
 
         started_at = monotonic_clock
         metadata.mark_refreshing!

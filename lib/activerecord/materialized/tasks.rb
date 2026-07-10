@@ -14,6 +14,7 @@ module ActiveRecord
           rebuild: "Rebuild (fully materialize) all registered materialized views",
           verify: "Verify materialized view cache tables match their source relations",
           audit: "Verify materialized view contents against their source relations (data drift)",
+          reconcile: "Reconcile stale materialized views: verify contents and repair drift (scoped)",
           warm_up: "Materialize each view's configured warm_up partitions"
         }.freeze,
         T::Hash[Symbol, String]
@@ -34,16 +35,10 @@ module ActiveRecord
         end
       end
 
+      # Each task name maps by convention to its `run_<task_name>!` module method.
       sig { params(task_name: Symbol).void }
       def self.run!(task_name)
-        case task_name
-        when :refresh_all then run_refresh_all!
-        when :refresh_stale then run_refresh_stale!
-        when :rebuild then run_rebuild_all!
-        when :verify then run_verify!
-        when :audit then run_audit!
-        when :warm_up then run_warm_up_all!
-        end
+        public_send(:"run_#{task_name}!")
       end
 
       sig { void }
@@ -60,7 +55,7 @@ module ActiveRecord
       end
 
       sig { void }
-      def self.run_rebuild_all!
+      def self.run_rebuild!
         Registry.rebuild_all!
         T.unsafe(Rails).logger.debug { "Rebuilt #{Registry.all.size} materialized view(s)." }
       end
@@ -78,7 +73,17 @@ module ActiveRecord
       end
 
       sig { void }
-      def self.run_warm_up_all!
+      def self.run_reconcile!
+        results = ActiveRecord::Materialized.reconcile_stale!
+        repaired = results.sum(&:repaired_partition_count)
+        failed = results.count(&:failed?)
+        T.unsafe(Rails).logger.debug do
+          "Reconciled #{results.size} stale view(s); repaired #{repaired} partition(s); #{failed} failed."
+        end
+      end
+
+      sig { void }
+      def self.run_warm_up!
         Registry.warm_up_all!
         T.unsafe(Rails).logger.debug { "Warmed up #{Registry.all.size} materialized view(s)." }
       end

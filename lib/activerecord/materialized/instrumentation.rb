@@ -34,12 +34,17 @@ module ActiveRecord
     #   +:scoped_recompute+), +:scope+ (+:scoped+, or +:full+ when the write
     #   widened to a full recompute because its partition key could not be
     #   derived), +:partition_count+ (distinct partitions scoped, 0 on widen).
+    # * +reconcile.active_record_materialized+ — one per {Reconciler} run. Payload:
+    #   +:view+, +:mode+ (the drift-check depth), +:repaired_partition_count+
+    #   (partitions found divergent and repaired with scoped maintenance), +:deferred+
+    #   (+true+ when a concurrent refresh deferred the run to the next tick).
     module Instrumentation
       extend T::Sig
 
       READ = T.let("read.active_record_materialized", String)
       REFRESH = T.let("refresh.active_record_materialized", String)
       MAINTENANCE = T.let("maintenance.active_record_materialized", String)
+      RECONCILE = T.let("reconcile.active_record_materialized", String)
 
       class << self
         extend T::Sig
@@ -88,6 +93,21 @@ module ActiveRecord
             MAINTENANCE,
             view: view_class, table: change.table_name, operation: change.operation.to_sym,
             path: path, scope: scope, partition_count: partition_count
+          )
+        end
+
+        # Fired once per {Reconciler} run — after it verifies and (if needed) repairs
+        # via scoped maintenance — carrying the run's mode, repaired count, and defer flag.
+        sig do
+          params(
+            view_class: ViewClass, mode: Symbol, repaired_partition_count: Integer, deferred: T::Boolean
+          ).void
+        end
+        def reconcile(view_class, mode:, repaired_partition_count:, deferred:)
+          ::ActiveSupport::Notifications.instrument(
+            RECONCILE,
+            view: view_class, mode: mode,
+            repaired_partition_count: repaired_partition_count, deferred: deferred
           )
         end
 

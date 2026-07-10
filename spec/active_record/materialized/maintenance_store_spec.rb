@@ -55,5 +55,13 @@ RSpec.describe ActiveRecord::Materialized::MaintenanceStore do
 
       expect(store.pending.full_partition?).to be(true)
     end
+
+    it "widens to a full recompute rather than dropping a different-kind pending delta" do
+      store.merge!(summary_for("books")) # a pending summary delta from a callback write
+      store.merge!(ActiveRecord::Materialized::MaintenanceDelta.scoped([["games"]])) # a reconcile repair
+
+      # Neither the summary delta nor the scoped repair is silently dropped.
+      expect(store.pending.full_partition?).to be(true)
+    end
   end
 end

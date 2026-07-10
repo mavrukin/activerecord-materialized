@@ -79,6 +79,13 @@ module ActiveRecord
           refresh! if materialized? && stale?
         end
 
+        # Verify this view's contents against its source and repair any drift with
+        # scoped maintenance (never a full rebuild). See {Reconciler}.
+        sig { params(mode: Symbol, sample: T.nilable(Numeric)).returns(ReconcileResult) }
+        def reconcile!(mode: :checksum, sample: nil)
+          Reconciler.new(view_class, mode: mode, sample: sample).reconcile!
+        end
+
         # The only path that scans all base data; `confirm:` guards against
         # firing a full materialization by accident.
         sig { params(confirm: T::Boolean).returns(RefreshResult) }

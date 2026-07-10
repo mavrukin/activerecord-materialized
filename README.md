@@ -48,6 +48,7 @@
 - [Change sources](#change-sources)
 - [Observability](#observability)
 - [Detecting data drift](#detecting-data-drift)
+- [Bounded staleness and self-healing](#bounded-staleness-and-self-healing)
 - [API reference](#api-reference)
 - [Benchmark results](#benchmark-results)
 - [When to use (and when not to)](#when-to-use-and-when-not-to)
@@ -533,6 +534,7 @@ without the gem taking a dependency on a specific telemetry vendor.
 | `read.active_record_materialized` | Once per routed read (`where`, `find`, `count`, …) | `:view`, `:source` (`:cache`, `:read_through`, `:serve_stale`, `:raise`), `:staleness` (seconds since last refresh, or `nil`) |
 | `refresh.active_record_materialized` | Once per `refresh!` / `rebuild!`, timed | `:view`, `:operation` (`:incremental`/`:rebuild`), `:mode` (`:summary_delta`/`:scoped_recompute`/`:full`), `:partition_count` (partitions recomputed, `nil` for a full pass), `:row_count`, `:skipped`, and on failure the standard `:exception`/`:exception_object` |
 | `maintenance.active_record_materialized` | Once per dependency write that records pending maintenance | `:view`, `:table`, `:operation` (`:create`/`:update`/`:destroy`), `:path` (`:summary_delta`/`:scoped_recompute`), `:scope` (`:scoped`, or `:full` when the write **widened to a full recompute**), `:partition_count` (distinct partitions scoped, `0` on a widen) |
+| `reconcile.active_record_materialized` | Once per `reconcile!` / `reconcile_stale!` run per view | `:view`, `:mode` (drift-check depth), `:repaired_partition_count` (partitions repaired with scoped maintenance), `:deferred` (`true` when a concurrent refresh deferred the run to the next tick) |
 
 A read served with `source: :read_through` means the view was cold and the query
 fell through to the source. A maintenance event with `scope: :full` means the
@@ -562,9 +564,9 @@ ActiveSupport::Notifications.subscribe("maintenance.active_record_materialized")
 end
 ```
 
-The constants `ActiveRecord::Materialized::Instrumentation::READ`, `REFRESH`, and
-`MAINTENANCE` hold the event-name strings if you prefer referencing them over
-string literals. Read events are emitted only while a subscriber is attached, so
+The constants `ActiveRecord::Materialized::Instrumentation::READ`, `REFRESH`,
+`MAINTENANCE`, and `RECONCILE` hold the event-name strings if you prefer referencing
+them over string literals. Read events are emitted only while a subscriber is attached, so
 there is no staleness-lookup cost on the read path when nobody is listening.
 
 ---
@@ -619,6 +621,52 @@ Rake: `bin/rails materialized:audit` runs `verify_data!` across all views.
 
 ---
 
+## Bounded staleness and self-healing
+
+Any change source can miss a write — callbacks miss bulk/raw writes, and even a CDC
+stream can drop or lag. Left alone, a missed write leaves a partition wrong
+indefinitely. **Reconciliation** turns that unbounded drift into bounded,
+self-correcting staleness: on a schedule it verifies each view (via [data-drift
+detection](#detecting-data-drift)) and repairs whatever diverged — re-aggregating
+missing/mismatched partitions and dropping extra ones — using **scoped** maintenance,
+never a full `rebuild!`.
+
+```ruby
+# One view: drain pending maintenance, verify, and repair any drift. Returns a ReconcileResult.
+result = SalesSummary.reconcile!(mode: :checksum)
+result.repaired?                # => true when drift was found and repaired
+result.repaired_partition_count # => how many partitions were repaired
+
+# All registered views, or only the stale ones (the scheduled backstop).
+ActiveRecord::Materialized.reconcile!(mode: :checksum)         # every view
+ActiveRecord::Materialized.reconcile_stale!(mode: :checksum)   # dirty / past max_staleness only
+```
+
+Run `materialized:reconcile` (which calls `reconcile_stale!`) periodically from cron
+or ActiveJob. It reconciles only **stale** views — dirty, never refreshed, or past
+their [`max_staleness`](#dsl) — so the window between a missed write and its repair is
+bounded by your schedule interval and each view's `max_staleness`, at the cost of one
+drift check per stale view per tick. Use `sample:` (see [data drift](#detecting-data-drift))
+to bound that cost on large views.
+
+Reconciliation is safe to run alongside normal refresh. It drains pending maintenance
+first (so it repairs genuinely-missed writes, not maintenance merely not yet applied),
+and repairs through the same guarded, transactional maintenance path — so an
+overlapping refresh can neither corrupt the cache nor double-maintain. When a refresh
+already holds the view's cycle, the scoped repair is **deferred**
+(`ReconcileResult#deferred`): it is durably queued and drained by that cycle or the
+next tick, never lost. A full `rebuild!` remains the explicit escape hatch, and
+`cold_read :read_through` stays the always-correct fallback while a partition is being
+repaired.
+
+A clean reconcile resets the staleness clock (`last_reconciled_at`), so a drift-free
+view is not re-verified every tick. In a batch run, a failure reconciling one view is
+isolated on its `ReconcileResult#error` rather than aborting the rest of the fleet.
+Each run stamps `last_reconciled_at` / `reconciled_partition_count` on the view's
+metadata and emits a [`reconcile.active_record_materialized`](#observability) event.
+
+---
+
 ## API reference
 
 ### Class methods
@@ -629,6 +677,7 @@ Rake: `bin/rails materialized:audit` runs `verify_data!` across all views.
 | `warm_up!` | Materialize the configured `warm_up` partitions ahead of traffic |
 | `refresh!` | Incremental maintenance only (no-op on an unbuilt view); never rebuilds |
 | `refresh_if_stale!` | Incremental maintenance when materialized and stale |
+| `reconcile!(mode:, sample:)` | Verify contents against the source and repair drift with scoped maintenance (never a rebuild); see [self-healing](#bounded-staleness-and-self-healing) |
 | `materialized?` | Whether the view has been built (warm) and reads serve from the cache |
 | `dirty?` | Whether a dependency change is pending maintenance |
 | `stale?` | Whether view is dirty or exceeds `max_staleness` |
@@ -675,6 +724,7 @@ bin/rails materialized:refresh_stale
 bin/rails materialized:rebuild         # intentional full materialization (in-DB INSERT … SELECT)
 bin/rails materialized:verify          # raise on cache-table schema drift
 bin/rails materialized:audit           # raise on data drift (contents vs. source)
+bin/rails materialized:reconcile       # verify stale views and repair drift (scoped); for cron/ActiveJob
 bin/rails materialized:warm_up         # materialize configured warm_up partitions
 ```
 

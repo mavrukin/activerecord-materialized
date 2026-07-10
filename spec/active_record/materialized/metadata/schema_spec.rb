@@ -25,6 +25,7 @@ RSpec.describe ActiveRecord::Materialized::Metadata::Schema do
     %w[
       view_name last_refreshed_at refreshing dirty warm
       row_count refresh_duration_ms last_error maintenance_payload
+      last_reconciled_at reconciled_partition_count
     ].each { |column| expect(rendered).to include(":#{column}") }
   end
 

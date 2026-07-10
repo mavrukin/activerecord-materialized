@@ -35,6 +35,13 @@ module ActiveRecord
       def drifted?
         missing_keys.any? || extra_keys.any? || mismatched_keys.any?
       end
+
+      # Every diverging partition key, however it diverged — the set a reconciliation
+      # re-maintains (see {Reconciler}).
+      sig { returns(T::Array[T::Array[T.untyped]]) }
+      def divergent_keys
+        (missing_keys + extra_keys + mismatched_keys).uniq
+      end
     end
   end
 end
