@@ -68,6 +68,32 @@ module ActiveRecord
         registered.each { |view_class| SchemaVerifier.new(view_class).verify! }
       end
 
+      # Checks every registered view's materialized *contents* against its source
+      # relation and returns a {DataVerificationResult} per view (never raises on
+      # drift), so callers can alert on or repair the divergent partition keys.
+      #
+      # @param mode [Symbol] +:row_count+, +:checksum+, or +:full+
+      # @param sample [Numeric, nil] verify a random subset (Integer count / Float fraction)
+      # @return [Array<DataVerificationResult>]
+      sig { params(mode: Symbol, sample: T.nilable(Numeric)).returns(T::Array[DataVerificationResult]) }
+      def verify_data(mode: :checksum, sample: nil)
+        Registry.all.map { |view_class| DataVerifier.new(view_class, mode: mode, sample: sample).verify }
+      end
+
+      # Like {verify_data} but raises {DataVerifier::DataDriftError} if any view has
+      # drifted — for a boot/CI/cron gate. Returns the results when all are clean.
+      #
+      # @raise [DataVerifier::DataDriftError] listing the drifted views
+      # @return [Array<DataVerificationResult>]
+      sig { params(mode: Symbol, sample: T.nilable(Numeric)).returns(T::Array[DataVerificationResult]) }
+      def verify_data!(mode: :checksum, sample: nil)
+        results = verify_data(mode: mode, sample: sample)
+        drifted = results.select(&:drifted?)
+        return results if drifted.empty?
+
+        raise DataVerifier::DataDriftError, data_drift_message(drifted)
+      end
+
       # Publishes a committed dependency write from a custom change source (a
       # CDC/replication stream, a bulk loader, another service). It drives the
       # externally-fed views (`change_source :none`) that depend on the table;
@@ -142,6 +168,17 @@ module ActiveRecord
       sig { params(value: Configuration).void }
       def configuration=(value)
         @configuration = T.let(value, T.nilable(Configuration))
+      end
+
+      private
+
+      sig { params(results: T::Array[DataVerificationResult]).returns(String) }
+      def data_drift_message(results)
+        summary = results.map do |result|
+          "#{result.view_name} (#{result.missing_keys.size} missing, " \
+            "#{result.extra_keys.size} extra, #{result.mismatched_keys.size} mismatched)"
+        end
+        "materialized view data drift detected: #{summary.join('; ')}"
       end
     end
   end

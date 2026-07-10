@@ -41,8 +41,10 @@ module ActiveRecord
       end
       def partition_scope_on(model, key_tuples)
         validate_partition_keys!(key_tuples)
-        attributes = group_key_columns.map { |column| T.unsafe(model).arel_table[column] }
-        filter_partitions(model.unscoped, attributes, key_tuples)
+        # On the cache/model table the key is the projected column, so a qualified
+        # GROUP BY name (e.g. "authors.country") maps to the bare column ("country").
+        attributes = group_key_columns.map { |column| T.unsafe(model).arel_table[unqualified(column)] }
+        PartitionFilter.new(attributes, key_tuples).apply(model.unscoped)
       end
 
       # Restrict the source relation to the given partitions. Qualify each key to
@@ -52,11 +54,29 @@ module ActiveRecord
       def partition_scope(key_tuples)
         validate_partition_keys!(key_tuples)
         base = T.unsafe(source).klass.arel_table
-        attributes = group_key_columns.map { |column| group_attributes[column] || base[column] }
-        filter_partitions(source, attributes, key_tuples)
+        attributes = group_key_columns.map { |column| source_attribute(column, base) }
+        PartitionFilter.new(attributes, key_tuples).apply(source)
       end
 
       private
+
+      # The Arel attribute for a GROUP BY key on the source side: the captured Arel
+      # attribute if the key was given as one; otherwise a qualified string like
+      # "authors.country" builds that table's attribute, and a bare name uses the
+      # source's base table.
+      sig { params(column: String, base: T.untyped).returns(T.untyped) }
+      def source_attribute(column, base)
+        return group_attributes[column] if group_attributes.key?(column)
+
+        table, separator, name = column.rpartition(".")
+        separator.empty? ? base[column] : ::Arel::Table.new(table)[name]
+      end
+
+      # The bare column name, dropping any "table." qualifier.
+      sig { params(column: String).returns(String) }
+      def unqualified(column)
+        column.rpartition(".").last
+      end
 
       sig { returns(::ActiveRecord::Relation) }
       attr_reader :source
@@ -98,34 +118,6 @@ module ActiveRecord
         @group_attributes = T.let(@group_attributes, T.nilable(T::Hash[String, T.untyped]))
         @group_attributes ||= T.unsafe(source).group_values.each_with_object({}) do |value, map|
           map[T.unsafe(value).name.to_s] = value if value.is_a?(::Arel::Attributes::Attribute)
-        end
-      end
-
-      sig do
-        params(
-          scope: ::ActiveRecord::Relation,
-          attributes: T::Array[T.untyped],
-          key_tuples: T::Array[T::Array[T.untyped]]
-        ).returns(::ActiveRecord::Relation)
-      end
-      def filter_partitions(scope, attributes, key_tuples)
-        return multi_partition_filter(scope, attributes, key_tuples) if attributes.size > 1
-
-        scope.where(T.unsafe(attributes.fetch(0)).in(key_tuples.map(&:first)))
-      end
-
-      sig do
-        params(
-          scope: ::ActiveRecord::Relation, attributes: T::Array[T.untyped],
-          key_tuples: T::Array[T::Array[T.untyped]]
-        ).returns(::ActiveRecord::Relation)
-      end
-      def multi_partition_filter(scope, attributes, key_tuples)
-        key_tuples.reduce(T.unsafe(nil)) do |merged_scope, tuple|
-          branch = attributes.each_with_index.reduce(scope) do |relation, (attribute, index)|
-            relation.where(T.unsafe(attribute).eq(tuple[index]))
-          end
-          merged_scope.nil? ? branch : merged_scope.or(branch)
         end
       end
     end

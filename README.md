@@ -47,6 +47,7 @@
 - [Configuration](#configuration)
 - [Change sources](#change-sources)
 - [Observability](#observability)
+- [Detecting data drift](#detecting-data-drift)
 - [API reference](#api-reference)
 - [Benchmark results](#benchmark-results)
 - [When to use (and when not to)](#when-to-use-and-when-not-to)
@@ -568,6 +569,56 @@ there is no staleness-lookup cost on the read path when nobody is listening.
 
 ---
 
+## Detecting data drift
+
+`materialized:verify` checks a cache table's **schema** against its source. To
+detect **data** drift — the materialized contents diverging from what the source
+relation would produce now (e.g. because a write slipped past the change source) —
+use the data-verification API. It recomputes the source and compares it to the
+cache per partition, reporting the divergent partition keys. It never alters data.
+Both the cache and the recomputed source are read through the **cache model's own
+column types**, so a value that reads back through two different type systems (a
+date key, an integer/decimal column, a computed source aggregate) isn't mistaken
+for drift; duplicate cache rows for a partition are caught rather than collapsed. It
+covers grouped/aggregate views — a non-grouped view, a schema-drifted cache, or one
+whose `GROUP BY` key can't be matched to a projected column is skipped. (An
+un-scaled decimal aggregate can still differ in trailing float precision; give such
+a column an explicit scale to compare it soundly.)
+
+```ruby
+# One view, programmatically — returns a DataVerificationResult.
+result = ActiveRecord::Materialized::DataVerifier.new(SalesSummary, mode: :checksum).verify
+result.drifted?        # => true/false
+result.mismatched_keys # => partitions whose values differ
+result.missing_keys    # => in the source, absent from the cache
+result.extra_keys      # => in the cache, absent from the source
+
+# All registered views — array of results, or verify_data! to raise on drift.
+ActiveRecord::Materialized.verify_data(mode: :checksum)
+ActiveRecord::Materialized.verify_data!(mode: :full)   # boot/CI/cron gate; raises DataDriftError
+```
+
+Modes trade cost for depth:
+
+| Mode | Compares | Use when |
+|------|----------|----------|
+| `:row_count` | Which partitions exist, and each partition's row count (missing/extra partitions, plus duplicated/lost rows via `mismatched_keys`) | Cheapest structural check |
+| `:checksum` | A per-partition digest of the value columns | Wide rows; detect value drift compactly |
+| `:full` | The value columns exactly | Exhaustive / debuggable |
+
+For large views, `sample:` (an Integer count or a Float fraction) is a cheap
+periodic probe: it value-checks a random subset of **materialized** partitions and
+reports coverage (`checked_partition_count` / `total_partition_count`). Because it
+only looks at partitions already in the cache, it detects value drift and extra
+partitions but **not missing (source-only) partitions** — use full mode (or a
+sample covering every partition, which runs exhaustively) for completeness. The
+returned partition keys are what a repair step re-maintains (see self-healing
+reconciliation).
+
+Rake: `bin/rails materialized:audit` runs `verify_data!` across all views.
+
+---
+
 ## API reference
 
 ### Class methods
@@ -623,6 +674,7 @@ bin/rails materialized:refresh_all     # incremental maintenance pass
 bin/rails materialized:refresh_stale
 bin/rails materialized:rebuild         # intentional full materialization (in-DB INSERT … SELECT)
 bin/rails materialized:verify          # raise on cache-table schema drift
+bin/rails materialized:audit           # raise on data drift (contents vs. source)
 bin/rails materialized:warm_up         # materialize configured warm_up partitions
 ```
 
