@@ -30,6 +30,26 @@ module ViewSources
     )
   end
 
+  # A dotted GROUP BY string ("items.category") whose projected column is the bare
+  # "category" — exercises qualifier-stripping when matching group keys to columns.
+  def item_count_by_dotted_category
+    items = Item.arel_table
+    Item.group("items.category").select(
+      items[:category],
+      count_as(items[:id], as: :item_count)
+    )
+  end
+
+  # A float-valued aggregate (AVG) — its cache column stores the value under a
+  # numeric affinity that can differ in representation from the recomputed source.
+  def avg_amount_by_category
+    items = Item.arel_table
+    Item.group(:category).select(
+      items[:category],
+      avg_as(items[:amount], as: :avg_amount)
+    )
+  end
+
   def revenue_by_category
     items = Item.arel_table
     amount_sum = items[:amount].sum
