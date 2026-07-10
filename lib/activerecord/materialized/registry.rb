@@ -52,6 +52,16 @@ module ActiveRecord
           all.map { |view| view.rebuild!(confirm: true) }
         end
 
+        sig { params(mode: Symbol, sample: T.nilable(Numeric)).returns(T::Array[ReconcileResult]) }
+        def reconcile_all!(mode: :checksum, sample: nil)
+          all.map { |view| reconcile_view(view, mode: mode, sample: sample) }
+        end
+
+        sig { params(mode: Symbol, sample: T.nilable(Numeric)).returns(T::Array[ReconcileResult]) }
+        def reconcile_stale!(mode: :checksum, sample: nil)
+          all.select(&:stale?).map { |view| reconcile_view(view, mode: mode, sample: sample) }
+        end
+
         sig { returns(T::Array[T.nilable(RefreshResult)]) }
         def warm_up_all!
           all.map(&:warm_up!)
@@ -63,6 +73,16 @@ module ActiveRecord
         end
 
         private
+
+        # Reconcile one view, isolating a failure so a single unhealthy view (e.g. a
+        # transiently broken source relation) can't abort the scheduled backstop for
+        # the rest of the fleet; the error is reported on the result, not swallowed.
+        sig { params(view: ViewClass, mode: Symbol, sample: T.nilable(Numeric)).returns(ReconcileResult) }
+        def reconcile_view(view, mode:, sample:)
+          view.reconcile!(mode: mode, sample: sample)
+        rescue StandardError => e
+          ReconcileResult.new(view_name: view.view_key, mode: mode, repaired_keys: [], error: e.message)
+        end
 
         sig { returns(T::Hash[String, ViewClass]) }
         def views

@@ -94,6 +94,30 @@ module ActiveRecord
         raise DataVerifier::DataDriftError, data_drift_message(drifted)
       end
 
+      # Reconciles every registered view — verifies its contents against the source and
+      # repairs any drift with scoped maintenance (never a full rebuild), returning a
+      # {ReconcileResult} per view. See {Reconciler}.
+      #
+      # @param mode [Symbol] drift-check depth: +:row_count+, +:checksum+, or +:full+
+      # @param sample [Numeric, nil] verify a random subset (Integer count / Float fraction)
+      # @return [Array<ReconcileResult>]
+      sig { params(mode: Symbol, sample: T.nilable(Numeric)).returns(T::Array[ReconcileResult]) }
+      def reconcile!(mode: :checksum, sample: nil)
+        Registry.reconcile_all!(mode: mode, sample: sample)
+      end
+
+      # Like {reconcile!} but only for stale views — dirty, never refreshed, or past
+      # +max_staleness+ — the scheduled bounded-staleness backstop (fresh views are
+      # skipped). Drive it from cron or ActiveJob.
+      #
+      # @param mode [Symbol] drift-check depth: +:row_count+, +:checksum+, or +:full+
+      # @param sample [Numeric, nil] verify a random subset (Integer count / Float fraction)
+      # @return [Array<ReconcileResult>] one per reconciled (stale) view
+      sig { params(mode: Symbol, sample: T.nilable(Numeric)).returns(T::Array[ReconcileResult]) }
+      def reconcile_stale!(mode: :checksum, sample: nil)
+        Registry.reconcile_stale!(mode: mode, sample: sample)
+      end
+
       # Publishes a committed dependency write from a custom change source (a
       # CDC/replication stream, a bulk loader, another service). It drives the
       # externally-fed views (`change_source :none`) that depend on the table;

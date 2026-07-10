@@ -56,6 +56,8 @@ require_relative "materialized/incremental_maintainer"
 require_relative "materialized/incremental_refresh"
 require_relative "materialized/delta_maintainer"
 require_relative "materialized/metadata"
+require_relative "materialized/reconcile_result"
+require_relative "materialized/reconciler"
 require_relative "materialized/partition_record"
 require_relative "materialized/partition_state"
 

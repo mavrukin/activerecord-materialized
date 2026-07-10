@@ -25,6 +25,12 @@ class ::ActiveRecord::Materialized::MetadataRecord < ::ActiveRecord::Base
   sig { returns(T.nilable(Integer)) }
   def refresh_duration_ms; end
 
+  sig { returns(T.nilable(::ActiveRecordMaterializedTypes::Timestamp)) }
+  def last_reconciled_at; end
+
+  sig { returns(T.nilable(Integer)) }
+  def reconciled_partition_count; end
+
   sig { returns(T.nilable(String)) }
   def last_error; end
 

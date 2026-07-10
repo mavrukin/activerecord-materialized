@@ -55,8 +55,12 @@ module ActiveRecord
       def combine(current, delta)
         return delta if current.nil?
         return current if recompute_all?(current) # terminal: absorb everything
+        # Different kinds can't merge (a summary delta meeting a scoped recompute — e.g.
+        # reconcile's repair racing a callback write); widen to a full recompute rather
+        # than dropping either side's pending maintenance.
+        return MaintenanceDelta.full_partition unless current.instance_of?(delta.class)
 
-        merged = current.instance_of?(delta.class) ? T.unsafe(current).merge(delta) : delta
+        merged = T.unsafe(current).merge(delta)
         oversized?(merged) ? MaintenanceDelta.full_partition : merged
       end
 
