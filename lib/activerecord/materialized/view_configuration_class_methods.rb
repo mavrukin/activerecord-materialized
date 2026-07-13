@@ -22,14 +22,11 @@ module ActiveRecord
         # Per-subclass DSL ivars reset to nil on inheritance so a subclass never
         # inherits another view's configuration. (`@dependency_tables` resets to
         # an empty list instead — see {inherited}.)
-        NIL_RESET_IVARS = T.let(
-          %i[
-            @refresh_strategy @refresh_debounce @refresh_mode @incremental_source_definition
-            @incremental_key_columns @partition_key_resolvers @cold_read_strategy @change_source
-            @warm_up_definition
-          ].freeze,
-          T::Array[Symbol]
-        )
+        NIL_RESET_IVARS = %i[
+          @refresh_strategy @refresh_debounce @refresh_mode @incremental_source_definition
+          @incremental_key_columns @partition_key_resolvers @cold_read_strategy @change_source
+          @warm_up_definition
+        ].freeze
 
         sig { returns(T.class_of(View)) }
         def view_class

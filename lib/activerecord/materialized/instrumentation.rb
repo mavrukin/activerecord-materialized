@@ -41,10 +41,10 @@ module ActiveRecord
     module Instrumentation
       extend T::Sig
 
-      READ = T.let("read.active_record_materialized", String)
-      REFRESH = T.let("refresh.active_record_materialized", String)
-      MAINTENANCE = T.let("maintenance.active_record_materialized", String)
-      RECONCILE = T.let("reconcile.active_record_materialized", String)
+      READ = "read.active_record_materialized"
+      REFRESH = "refresh.active_record_materialized"
+      MAINTENANCE = "maintenance.active_record_materialized"
+      RECONCILE = "reconcile.active_record_materialized"
 
       class << self
         extend T::Sig

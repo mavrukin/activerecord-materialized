@@ -16,7 +16,7 @@ module ActiveRecord
       # may be strings or symbols and are normalized to strings.
       AttributeInput = T.type_alias { T::Hash[T.any(String, Symbol), T.untyped] }
 
-      OPERATIONS = T.let(%i[create update destroy].freeze, T::Array[Symbol])
+      OPERATIONS = %i[create update destroy].freeze
       EMPTY_ATTRIBUTES = T.let({}.freeze, AttributeInput)
 
       sig { returns(String) }

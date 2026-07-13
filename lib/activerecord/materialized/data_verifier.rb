@@ -24,7 +24,7 @@ module ActiveRecord
       # Raised (by {Materialized.verify_data!}) when a view's contents have drifted.
       class DataDriftError < StandardError; end
 
-      MODES = T.let(%i[row_count checksum full].freeze, T::Array[Symbol])
+      MODES = %i[row_count checksum full].freeze
 
       sig { params(view_class: ViewClass, mode: Symbol, sample: T.nilable(Numeric)).void }
       def initialize(view_class, mode: :checksum, sample: nil)
