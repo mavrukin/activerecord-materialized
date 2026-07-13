@@ -81,6 +81,34 @@ This walks the four cases the gem is built for:
 4. **Real results, not just timings.** Every comparison shows the actual rows
    returned by both paths, the row counts, the timings, and the query's SQL.
 
+## Change data capture: raw SQL writes
+
+The three scenarios above are fed by ActiveRecord commit callbacks. But a write
+that bypasses ActiveRecord — a raw `INSERT` on the connection, a `psql`/`mysql`
+session, a bulk load, or another service writing to the shared database — fires
+**no** callback, so a callback-fed view never hears about it. The **Run the CDC
+flow** card demonstrates the answer: change data capture.
+
+It drives a callback-free view (`CdcCompanyLinksView`, declared `change_source
+:none`, counting company links per company type) through the full CDC path and
+replays it as an animated pipeline:
+
+1. **Raw SQL write** — a literal `INSERT INTO movie_companies …` issued straight on
+   the connection, so no `after_commit` callback fires.
+2. **Change captured & relayed** — the exact `ingest_change(...)` call a binlog/WAL
+   consumer (Debezium/Maxwell-style) would relay for that commit.
+3. **Scoped maintenance** — the engine recomputes only the one partition the change
+   touched (`scope: scoped`), never a full rebuild.
+4. **Refresh applied** — the cache row is recomputed in place.
+5. **Read converged** — the affected partition's count goes *N → N+1*, and the cache
+   now matches what the source query would produce.
+
+Every stage is captured from the gem's **real** `ActiveSupport::Notifications`
+instrumentation events (not a mock), through the reusable
+`BenchmarkSupport::CdcScenario` harness — the same harness the integration suite
+reuses to assert convergence against real MySQL/Postgres. The two badges
+(**scoped** and **converged**) are those reusable verdicts.
+
 ## Notes
 
 - The demo uses the gem's default `:async` refresh strategy (with a short

@@ -9,4 +9,5 @@ Rails.application.routes.draw do
   post "refresh/:key", to: "comparison#refresh", as: :refresh
   post "mutate/:key", to: "comparison#mutate", as: :mutate
   post "reset/:key", to: "comparison#reset", as: :reset
+  post "cdc", to: "comparison#cdc", as: :cdc
 end

@@ -134,31 +134,21 @@ module DemoComparison
       (Benchmark.realtime(&block) * 1000).round(2)
     end
 
-    # The cache table's surrogate primary key is not part of the materialized
-    # result (the raw grouped query has none), so ignore it everywhere.
-    IGNORED_COLUMNS = ["id"].freeze
-
     def tabular(label, served, ms, records)
-      sample = records.first(SAMPLE_ROWS).map { |record| record.attributes.except(*IGNORED_COLUMNS) }
+      # The cache table's surrogate id is not part of the materialized result (the raw
+      # grouped query has none), so drop it from the sample — reusing the single rule
+      # ResultComparison also uses for the match verdict, so display and verdict agree.
+      ignored = BenchmarkSupport::ResultComparison::IGNORED_COLUMNS
+      sample = records.first(SAMPLE_ROWS).map { |record| record.attributes.except(*ignored) }
       Result.new(label: label, served: served, ms: ms, row_count: records.size,
                  columns: sample.first&.keys || [], rows: sample)
     end
 
-    # Compare the full results order-independently: the raw query and the cache
-    # may return rows in a different order, which is not a difference.
+    # Compare the full results order-independently (the raw query and the cache may
+    # return rows in a different order, which is not a difference) — shared with the
+    # CDC scenario's convergence check via BenchmarkSupport::ResultComparison.
     def same_data?(raw_records, view_records)
-      return false if raw_records.size != view_records.size
-
-      shared = (attribute_keys(raw_records) & attribute_keys(view_records)) - IGNORED_COLUMNS
-      normalize(raw_records, shared) == normalize(view_records, shared)
-    end
-
-    def attribute_keys(records)
-      records.first&.attributes&.keys || []
-    end
-
-    def normalize(records, columns)
-      records.map { |record| record.attributes.values_at(*columns) }.sort_by(&:to_s)
+      BenchmarkSupport::ResultComparison.equivalent?(raw_records, view_records)
     end
   end
 
@@ -280,6 +270,100 @@ module DemoComparison
         titles: Job::Title.count,
         names: Job::Name.count
       }
+    end
+  end
+
+  # The change-data-capture scenario: a raw SQL write to a dependency table —
+  # bypassing ActiveRecord, so no after_commit callback fires — relayed through the
+  # ingestion API to drive the callback-free CdcCompanyLinksView. It runs on the
+  # reusable BenchmarkSupport::CdcScenario harness (the same one the integration
+  # suite uses), and turns the harness Run into display steps for the animated
+  # pipeline the view renders.
+  module CdcDemo
+    module_function
+
+    VIEW_NAME = "CdcCompanyLinksView"
+    LABEL = "Company links by type"
+
+    Step = Struct.new(:title, :detail, :note, keyword_init: true)
+
+    def view_class
+      VIEW_NAME.constantize
+    end
+
+    # Build the view if cold so the scenario shows a converging *update*, then run the
+    # raw-write → ingest → maintain → read flow through the shared harness.
+    def run
+      view_class.rebuild!(confirm: true) unless view_class.materialized?
+      BenchmarkSupport::CdcScenario.new(view: view_class, raw_write: -> { raw_insert }).run
+    end
+
+    # A raw SQL INSERT issued straight on the connection, so it bypasses the model's
+    # after_commit callbacks entirely. Returns the CDC descriptor a binlog/WAL
+    # consumer would relay for this committed change.
+    def raw_insert
+      connection = view_class.connection
+      company_type_id = Integer(connection.select_value("SELECT company_type_id FROM movie_companies LIMIT 1"))
+      movie_id = Integer(connection.select_value("SELECT id FROM title LIMIT 1"))
+      company_id = Integer(connection.select_value("SELECT id FROM company_name LIMIT 1"))
+      next_id = Integer(connection.select_value("SELECT COALESCE(MAX(id), 0) + 1 FROM movie_companies"))
+      connection.execute(
+        "INSERT INTO movie_companies (id, movie_id, company_id, company_type_id, note) " \
+        "VALUES (#{next_id}, #{movie_id}, #{company_id}, #{company_type_id}, 'cdc-demo')"
+      )
+      { table: "movie_companies", operation: :create, key_attributes: { "company_type_id" => company_type_id } }
+    end
+
+    # Map a harness Run onto the five pipeline stages the UI animates.
+    def pipeline(run)
+      company_type_id = run.descriptor[:key_attributes].values.first
+      maintenance = event(run, :maintenance)
+      refresh = event(run, :refresh)
+      [
+        Step.new(title: "Raw SQL write", detail: "INSERT INTO movie_companies … note='cdc-demo'",
+                 note: "issued on the connection — no after_commit callback fires"),
+        Step.new(title: "Change captured & relayed", detail: descriptor_call(run.descriptor),
+                 note: "a binlog / WAL consumer would relay exactly this via ingest_change"),
+        Step.new(title: "Scoped maintenance", detail: maintenance_detail(maintenance),
+                 note: "only the partition the change touched — never a full rebuild"),
+        Step.new(title: "Refresh applied", detail: refresh_detail(refresh),
+                 note: "the cache row is recomputed in place"),
+        Step.new(title: "Read converged", detail: convergence_detail(run, company_type_id),
+                 note: run.converged? ? "the cache now matches the source relation" : "cache did NOT match source")
+      ]
+    end
+
+    def event(run, stage)
+      run.timeline.find { |recorded| recorded.stage == stage }
+    end
+
+    def descriptor_call(descriptor)
+      keys = descriptor[:key_attributes].map { |name, value| "#{name.inspect} => #{value}" }.join(", ")
+      "ingest_change(table: #{descriptor[:table].inspect}, operation: #{descriptor[:operation].inspect}, " \
+        "key_attributes: {#{keys}})"
+    end
+
+    def maintenance_detail(event)
+      return "no maintenance event" if event.nil?
+
+      "scope: #{event.payload[:scope]} · partitions: #{event.payload[:partition_count]}"
+    end
+
+    def refresh_detail(event)
+      return "no refresh event" if event.nil?
+
+      "mode: #{event.payload[:mode]} · rows: #{event.payload[:row_count]}"
+    end
+
+    def convergence_detail(run, company_type_id)
+      before = link_count(run.before_rows, company_type_id)
+      after = link_count(run.after_rows, company_type_id)
+      "company type #{company_type_id}: #{before} → #{after} links"
+    end
+
+    def link_count(rows, company_type_id)
+      row = rows.find { |record| record.company_type_id == company_type_id }
+      row&.link_count
     end
   end
 end

@@ -49,6 +49,18 @@ class ComparisonController < ActionController::Base
     render :index
   end
 
+  # Run the CDC scenario: a raw SQL write bypasses ActiveRecord (no callback), is
+  # relayed through ingest_change, and the change_source :none view converges — the
+  # whole flow captured from the gem's real instrumentation events and replayed.
+  def cdc
+    @active = "cdc"
+    @cdc_run = DemoComparison::CdcDemo.run
+    render :index
+  rescue StandardError => e
+    @cdc_error = "Could not run the CDC scenario: #{e.message}"
+    render :index
+  end
+
   def select_db
     target = DemoComparison::Database.available.find { |db| db[:path] == params[:path] }
     if target

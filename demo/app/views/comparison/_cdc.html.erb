@@ -1,0 +1,38 @@
+<% steps = DemoComparison::CdcDemo.pipeline(run) %>
+<div class="cdc-flow">
+  <div class="cdc-verdicts">
+    <span class="badge <%= run.scoped? ? "fast" : "through" %>">
+      <%= run.scoped? ? "Scoped maintenance" : "Widened to full recompute" %>
+    </span>
+    <span class="badge <%= run.converged? ? "fast" : "through" %>">
+      <%= run.converged? ? "Cache converged with source" : "Cache diverged" %>
+    </span>
+    <button type="button" class="ghost cdc-replay" data-busy="">&#8635;&nbsp; Replay</button>
+  </div>
+  <ol class="cdc-steps">
+    <% steps.each_with_index do |step, index| %>
+      <li class="cdc-step" style="--i: <%= index %>">
+        <span class="cdc-dot"></span>
+        <div class="cdc-body">
+          <div class="cdc-title"><%= step.title %></div>
+          <code class="cdc-detail"><%= step.detail %></code>
+          <div class="cdc-note"><%= step.note %></div>
+        </div>
+      </li>
+    <% end %>
+  </ol>
+</div>
+<script>
+  // Replay the recorded pipeline: reveal each captured stage in sequence. These are
+  // the gem's real instrumentation events, animated in the order they fired.
+  (function () {
+    var flow = document.currentScript.previousElementSibling;
+    var steps = flow.querySelectorAll(".cdc-step");
+    function play() {
+      steps.forEach(function (el) { el.classList.remove("show"); });
+      steps.forEach(function (el, i) { setTimeout(function () { el.classList.add("show"); }, 150 + i * 430); });
+    }
+    flow.querySelector(".cdc-replay").addEventListener("click", play);
+    play();
+  })();
+</script>
