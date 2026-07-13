@@ -5,6 +5,9 @@
 benchmark_root = Rails.root.join("..", "benchmark")
 require benchmark_root.join("support", "benchmark_connection.rb").to_s
 require BenchmarkSupport::BENCHMARK_ROOT.join("support", "source_relations.rb").to_s
+# The reusable CDC scenario/validation harness the demo shares with the integration
+# suite (its ResultComparison also backs the demo's raw-vs-view equality check).
+require BenchmarkSupport::BENCHMARK_ROOT.join("support", "cdc_scenario.rb").to_s
 BenchmarkSupport.load_job_models!
 
 require Rails.root.join("lib", "demo_comparison.rb").to_s
@@ -16,6 +19,11 @@ require Rails.root.join("lib", "demo_comparison.rb").to_s
 DemoComparison::SCENARIOS.each do |scenario|
   require BenchmarkSupport::BENCHMARK_ROOT.join("materialized_models", "#{scenario.view_name.underscore}.rb").to_s
 end
+
+# The CDC scenario's view is fed through the ingestion API (change_source :none) and
+# keeps its own :immediate policy — load it outside the callback-strategy override
+# below so it stays callback-free.
+require BenchmarkSupport::BENCHMARK_ROOT.join("materialized_models", "cdc_company_links_view.rb").to_s
 
 # Demonstrate the real refresh-on-write behaviour: a dependency write marks the
 # view stale and an in-process background refresh brings it back up to date on

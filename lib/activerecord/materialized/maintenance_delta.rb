@@ -9,8 +9,8 @@ module ActiveRecord
     class MaintenanceDelta
       extend T::Sig
 
-      SCOPED = T.let(:scoped, Symbol)
-      FULL = T.let(:full_partition, Symbol)
+      SCOPED = :scoped
+      FULL = :full_partition
 
       sig { returns(Symbol) }
       attr_reader :scope

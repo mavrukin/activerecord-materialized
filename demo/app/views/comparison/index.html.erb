@@ -83,6 +83,32 @@
   </section>
 <% end %>
 
+<section class="card cdc<%= ' active' if @active == 'cdc' %>" id="s-cdc">
+  <header>
+    <div>
+      <span class="tag cdc-tag">Change data capture</span>
+      <h2>Raw SQL writes, captured &amp; applied</h2>
+    </div>
+  </header>
+  <p class="desc">
+    A write that bypasses ActiveRecord — a raw <code>INSERT</code> straight on the connection — fires
+    <b>no</b> <code>after_commit</code> callback, so a callback-fed view never sees it. Relay that change
+    through <code>ingest_change</code> and the <code>change_source :none</code> view catches up, with
+    maintenance <b>scoped</b> to the one partition the write touched. Every stage below is captured from the
+    gem&rsquo;s real instrumentation events.
+  </p>
+  <div class="actions">
+    <%= form_with url: cdc_path, method: :post do %>
+      <button class="primary" type="submit" data-busy="Running the CDC flow…">&#9654;&nbsp; Run the CDC flow</button>
+    <% end %>
+  </div>
+  <% if @cdc_error %>
+    <p class="notice"><%= @cdc_error %></p>
+  <% elsif @active == "cdc" && @cdc_run %>
+    <%= render "cdc", run: @cdc_run %>
+  <% end %>
+</section>
+
 <% if @active.present? %>
   <script>
     document.getElementById("s-<%= @active %>")?.scrollIntoView({ behavior: "smooth", block: "center" });

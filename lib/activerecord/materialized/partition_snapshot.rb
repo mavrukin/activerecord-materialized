@@ -22,7 +22,7 @@ module ActiveRecord
     class PartitionSnapshot
       extend T::Sig
 
-      SEPARATOR = T.let("\x1f", String) # ASCII unit separator between digested values
+      SEPARATOR = "\x1f" # ASCII unit separator between digested values
 
       sig do
         params(model: ViewClass, key_columns: T::Array[String], value_columns: T::Array[String], mode: Symbol).void
