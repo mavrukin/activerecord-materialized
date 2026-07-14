@@ -36,6 +36,7 @@
 
 ## Table of contents
 
+- [Database compatibility](#database-compatibility)
 - [Why this exists](#why-this-exists)
 - [How it works](#how-it-works)
 - [Research background](#research-background)
@@ -58,6 +59,18 @@
 - [Contributing](#contributing)
 
 ---
+
+## Database compatibility
+
+Integration-tested in CI on every push to `main` — real **MySQL** and **PostgreSQL** via Docker containers, **SQLite** in process. Each badge reflects that adapter's integration workflow; see [integration testing](docs/integration-testing.md) to run the matrix locally or add a database.
+
+| Database      | CI status |
+|---------------|-----------|
+| MySQL 8       | [![MySQL](https://github.com/mavrukin/activerecord-materialized/actions/workflows/db-mysql.yml/badge.svg?branch=main)](https://github.com/mavrukin/activerecord-materialized/actions/workflows/db-mysql.yml) |
+| PostgreSQL 16 | [![PostgreSQL](https://github.com/mavrukin/activerecord-materialized/actions/workflows/db-postgres.yml/badge.svg?branch=main)](https://github.com/mavrukin/activerecord-materialized/actions/workflows/db-postgres.yml) |
+| SQLite 3      | [![SQLite](https://github.com/mavrukin/activerecord-materialized/actions/workflows/db-sqlite.yml/badge.svg?branch=main)](https://github.com/mavrukin/activerecord-materialized/actions/workflows/db-sqlite.yml) |
+
+The CDC ingestion path (`ingest_change`) is exercised end-to-end against each engine — a raw write that bypasses callbacks is relayed and the view converges via scoped maintenance.
 
 ## Why this exists
 
