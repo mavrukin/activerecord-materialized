@@ -32,3 +32,20 @@ desc "Generate JOB-style SQLite database for benchmarks"
 task "benchmark:setup" => :environment do
   load File.expand_path("benchmark/scripts/generate_job_database.rb", __dir__)
 end
+
+desc "Run the real-DB integration matrix (honors ARM_ONLY=sqlite,mysql,postgres)"
+task integration: :environment do
+  sh "bundle exec rspec spec/integration"
+end
+
+namespace :integration do
+  desc "Start the local MySQL/Postgres containers for the integration matrix"
+  task up: :environment do
+    sh "docker compose up -d --wait"
+  end
+
+  desc "Stop and remove the local integration containers"
+  task down: :environment do
+    sh "docker compose down -v"
+  end
+end
