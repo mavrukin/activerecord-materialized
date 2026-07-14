@@ -1,0 +1,17 @@
+# Per-adapter caller so PostgreSQL gets its own status badge (see the README
+# "Database compatibility" matrix). Logic lives in the reusable integration.yml.
+name: PostgreSQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    uses: ./.github/workflows/integration.yml
+    with:
+      adapter: postgres

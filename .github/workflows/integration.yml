@@ -1,0 +1,78 @@
+# Reusable integration-matrix workflow (#70): one adapter per call, so each
+# caller (db-mysql / db-postgres / db-sqlite) yields its own status badge —
+# a single matrix job would produce only one combined badge.
+#
+# MySQL/Postgres are started with `docker run` (not GitHub service containers)
+# because we must pass server command args: mysql_native_password (trilogy can't
+# auth caching_sha2 over non-TLS TCP) + ROW binlog, and logical WAL for Postgres.
+# Host ports 3307/5433 dodge any DB pre-installed on the runner.
+name: Integration
+
+on:
+  workflow_call:
+    inputs:
+      adapter:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  ARM_MYSQL_HOST: 127.0.0.1
+  ARM_MYSQL_PORT: "3307"
+  ARM_MYSQL_USER: root
+  ARM_MYSQL_PASSWORD: root
+  ARM_MYSQL_DATABASE: arm_test
+  ARM_PG_URL: postgres://postgres:postgres@127.0.0.1:5433/arm_test
+
+jobs:
+  integration:
+    name: ${{ inputs.adapter }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start MySQL
+        if: inputs.adapter == 'mysql'
+        run: |
+          docker run -d --name arm-db -p 3307:3306 \
+            -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=arm_test \
+            --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot" \
+            --health-interval=5s --health-timeout=5s --health-retries=20 --health-start-period=20s \
+            mysql:8.0 \
+            --default-authentication-plugin=mysql_native_password \
+            --log-bin=binlog --binlog-format=ROW --binlog-row-image=FULL
+
+      - name: Start Postgres
+        if: inputs.adapter == 'postgres'
+        run: |
+          docker run -d --name arm-db -p 5433:5432 \
+            -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=arm_test \
+            --health-cmd="pg_isready -U postgres" \
+            --health-interval=5s --health-timeout=5s --health-retries=20 \
+            postgres:16 -c wal_level=logical
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+          bundler-cache: true
+
+      - name: Wait for database
+        if: inputs.adapter != 'sqlite'
+        run: |
+          for _ in $(seq 1 30); do
+            [ "$(docker inspect --format '{{.State.Health.Status}}' arm-db 2>/dev/null)" = healthy ] && exit 0
+            sleep 2
+          done
+          echo "::error::database container did not become healthy"
+          docker logs arm-db | tail -50
+          exit 1
+
+      - name: Run integration matrix (${{ inputs.adapter }})
+        env:
+          ARM_ONLY: ${{ inputs.adapter }}
+        run: |
+          bundle exec rake integration
+          echo "### Integration matrix: \`${{ inputs.adapter }}\` passed ✅" >> "$GITHUB_STEP_SUMMARY"
