@@ -26,15 +26,15 @@ group :development, :test do
   gem "sqlite3", "~> 2.1"
   gem "tapioca", "~> 0.16", require: false
   gem "yard", "~> 0.9", require: false
-  gem "yard-sorbet", "~> 0.9"
+  gem "yard-sorbet", "~> 0.9", require: false
 end
 
 # Real-database adapters for the integration matrix (spec/integration, #70).
-# Excluded from the default bundle so the fast suite and contributors without
-# client libraries never compile native extensions:
-#   bundle config set --local without integration
-# The integration workflows and `rake integration` install this group.
-group :integration do
+# NOT installed by default (install_if is false) so the fast suite and
+# contributors without client libraries never compile native extensions. Enable
+# with `ARM_INTEGRATION=1 bundle install` — the integration CI workflows and
+# docs/integration-testing.md do this.
+install_if -> { ENV["ARM_INTEGRATION"] == "1" } do
   gem "pg", "~> 1.5"
   gem "trilogy", "~> 2.8"
 end

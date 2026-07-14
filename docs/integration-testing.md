@@ -25,18 +25,15 @@ via *scoped* maintenance — all observed through the gem's real instrumentation
 
 ## Running the matrix locally
 
-Requires Docker. The `:integration` bundler group (`pg`, `trilogy`) must be
-installed — it is part of the default bundle, so unless you explicitly excluded it
-you are ready. If you previously ran `bundle config set --local without integration`,
-re-enable it:
+Requires Docker. The `pg` and `trilogy` adapters are **not** installed or loaded by
+default (the Gemfile gates them behind `install_if`), so the fast suite and
+contributors without client libraries never compile native extensions. Set
+`ARM_INTEGRATION=1` for the session — it enables them at both install and run time:
 
 ```bash
-bundle config unset --local without && bundle install
-```
+export ARM_INTEGRATION=1
+bundle install
 
-Then start the databases and run the matrix:
-
-```bash
 bundle exec rake integration:up        # MySQL on host :3307, Postgres on host :5433
 
 ARM_MYSQL_HOST=127.0.0.1 ARM_MYSQL_PORT=3307 \
@@ -71,7 +68,7 @@ never change:
 1. Add the key to `IntegrationAdapters::KEYS` and a `SETTINGS` entry (adapter name,
    `ARM_*` env prefix, default port) plus a `LABELS` entry in
    [`spec/integration/adapters.rb`](../spec/integration/adapters.rb).
-2. Add its client gem to the `:integration` group in the [`Gemfile`](../Gemfile).
+2. Add its client gem to the `install_if` block in the [`Gemfile`](../Gemfile).
 3. Add a caller workflow `.github/workflows/db-<name>.yml` (copy an existing one,
    change `name:` and `adapter:`) and a badge row to the README matrix. Provision
    the server in [`.github/workflows/integration.yml`](../.github/workflows/integration.yml)
