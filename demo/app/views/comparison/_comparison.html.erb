@@ -2,7 +2,7 @@
   <div class="verdict">
     <% if comparison.view.served == :read_through %>
       <span class="badge through">view not built → read‑through</span>
-      <span class="vnote">The view served correct results straight from the source query — same cost as raw, but transparent. Build it to make reads fast.</span>
+      <span class="vnote">Both columns ran the source query — the view isn't materialized yet, so there's no speedup to see.</span>
     <% elsif comparison.speedup %>
       <span class="badge fast"><%= number_with_delimiter comparison.speedup %>× faster</span>
       <span class="vnote">from the cache table — independent of dataset size.</span>
@@ -11,6 +11,15 @@
       <%= comparison.matches ? "results match ✓" : "results differ → cache is stale (refresh to catch up)" %>
     </span>
   </div>
+  <% if comparison.view.served == :read_through %>
+    <p class="hint">
+      💡 <b>This is expected, not an error.</b> The gem never builds a view implicitly — a full
+      materialization scans all the base data, so it stays an explicit, one‑time step (safe to
+      launch against a large database). Until you build it, reads transparently fall through to
+      the source. Click <b>Build / refresh</b> once to materialize it; after that reads hit the
+      cache and dependency <b>writes keep it fresh automatically</b>.
+    </p>
+  <% end %>
   <div class="cols">
     <%= render "result", result: comparison.raw, kind: "raw" %>
     <%= render "result", result: comparison.view, kind: (comparison.view.served == :cache ? "mv" : "through") %>
