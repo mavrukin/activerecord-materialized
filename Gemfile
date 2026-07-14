@@ -26,5 +26,15 @@ group :development, :test do
   gem "sqlite3", "~> 2.1"
   gem "tapioca", "~> 0.16", require: false
   gem "yard", "~> 0.9", require: false
-  gem "yard-sorbet", "~> 0.9", require: false
+  gem "yard-sorbet", "~> 0.9"
+end
+
+# Real-database adapters for the integration matrix (spec/integration, #70).
+# Excluded from the default bundle so the fast suite and contributors without
+# client libraries never compile native extensions:
+#   bundle config set --local without integration
+# The integration workflows and `rake integration` install this group.
+group :integration do
+  gem "pg", "~> 1.5"
+  gem "trilogy", "~> 2.8"
 end
