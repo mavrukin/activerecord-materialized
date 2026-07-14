@@ -16,8 +16,10 @@ bundle exec srb tc
 # has produced the fixture database.
 HEAVY_SPEC="spec/active_record/materialized/async_refresher_flush_spec.rb"
 
+# The fast run also excludes the real-DB integration matrix (spec/integration),
+# which needs MySQL/Postgres service containers — see .github/workflows/db-*.yml.
 echo "==> RSpec"
-bundle exec rspec --exclude-pattern "$HEAVY_SPEC"
+bundle exec rspec --exclude-pattern "$HEAVY_SPEC,spec/integration/**/*_spec.rb"
 
 echo "==> RSpec (benchmark integration, isolated)"
 bundle exec rspec "$HEAVY_SPEC"
