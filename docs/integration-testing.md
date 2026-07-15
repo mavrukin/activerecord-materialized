@@ -28,7 +28,7 @@ via *scoped* maintenance — all observed through the gem's real instrumentation
 - **`integration_adapters_spec`** — pure-Ruby registry unit checks (env parsing, `ARM_ONLY`, availability). Runs in the fast gate; no database.
 - **`cdc_matrix_spec`** (#70) — per engine: a raw write bypasses callbacks, is relayed via `ingest_change`, and the view converges via scoped maintenance.
 - **`load_bearing_spec`** (#84) — per engine: a wide multi-aggregate view (`COUNT`/`SUM`/`AVG`/`MIN`/`MAX`/`COUNT DISTINCT`) and a join-keyed view, driven with varied mutations (create, partition-moving update, delete, bulk write) at volume, asserting convergence and engine-consistent inferred column types.
-- **`concurrency_spec`** (#84) — forks concurrent writer and reader processes while the parent rebuilds the view mid-flight, asserting no process crashes, no torn/empty reads, and re-convergence. Runs on **MySQL only**: it forks, and PostgreSQL's libpq is not fork-safe (a forked child segfaults) while MySQL's trilogy tolerates it; SQLite's in-process `:memory:` database can't be shared across processes. PostgreSQL's single-process behavior is fully covered by the specs above.
+- **`concurrency_spec`** (#84) — spawns concurrent writer and reader processes while the parent rebuilds the view mid-flight, asserting no process crashes, no torn/empty reads, and re-convergence. Runs on **MySQL and PostgreSQL**: workers are *spawned* as fresh processes (not forked), so each opens its own clean connection and libpq's fork-unsafety is avoided. SQLite is skipped — its in-process `:memory:` database isn't shared across separate processes.
 
 ## Running the matrix locally
 

@@ -1,43 +1,39 @@
 # frozen_string_literal: true
 
 module BenchmarkSupport
-  # Forks concurrent writer and reader processes against a real database to stress a
-  # view under production-like load: writers mutate a scoped-recompute view (callback
-  # + immediate maintenance) while readers continuously query it AND the parent
-  # triggers rebuilds (atomic swaps) mid-flight. Deliberately less idealized than a
-  # fork-join-then-read — reads happen *during* writes and swaps.
-  #
-  # Fork hygiene: the parent disconnects before forking so no live socket is inherited
-  # (native DB drivers are not fork-safe); every process — children and parent — then
-  # opens its own connection. Children terminate with exit! (skipping RSpec's at_exit
-  # in the fork); pass/fail travels via exit status. No sleep — bounded iteration
-  # counts; assertions are on exit status + convergence, not timing.
+  # Stresses a view under production-like load by running concurrent writer and reader
+  # workers as separate SPAWNED processes (see concurrent_worker.rb) while the parent
+  # rebuilds the view (atomic swaps) mid-flight — a less-idealized "distributed feel"
+  # than fork-join-then-read. Spawned (not forked) workers each open their own clean
+  # connection, so this works on Postgres too (libpq is not fork-safe). No sleep —
+  # bounded iteration counts; assertions are on worker exit status + convergence.
   #
   # Convergence is checked after a final rebuild (a full, deterministic re-aggregation
   # from the now-quiescent source). Whether the *scoped* path converges without a
   # rebuild under concurrent maintenance is #75's concern (a cross-process lock);
   # asserting it here, pre-#75, would be racy. What this proves is the safety property:
-  # no process crashes, no writer loses a committed row, no reader sees a torn/empty
+  # no worker crashes, no writer loses a committed row, no reader sees a torn/empty
   # cache — and the system re-converges.
   class ConcurrentWorkload
     DEFAULT_SIZES = { writers: 4, readers: 2, writes: 15, reads: 40, rebuilds: 4 }.freeze
+    GEM_ROOT = File.expand_path("../../..", __dir__)
+    WORKER = File.expand_path("concurrent_worker.rb", __dir__)
 
     Result = Struct.new(:statuses, :converged, keyword_init: true) do
       def all_ok? = statuses.all?(&:zero?)
       def converged? = converged
     end
 
-    def initialize(view:, config:, write:, sizes: {})
+    def initialize(view:, adapter:, table:, sizes: {})
       @view = view
-      @config = config
-      @write = write # ->(worker, i) performing one write on the view's dependency
+      @adapter = adapter # the IntegrationAdapters key (e.g. :postgres)
+      @table = table     # the view's cache table name, so a worker can attach to it
       @sizes = DEFAULT_SIZES.merge(sizes)
     end
 
     def run
-      ActiveRecord::Base.connection_handler.clear_all_connections! # no live connection inherited across fork
-      pids = fork_writers + fork_readers
-      reconnect! # the parent's own connection for the mid-flight rebuilds
+      pids = spawn_role("writer", @sizes[:writers], @sizes[:writes]) +
+             spawn_role("reader", @sizes[:readers], @sizes[:reads])
       rebuild_during_storm
       statuses = reap(pids)
       @view.rebuild!(confirm: true) # storm over: deterministic re-aggregation from the source
@@ -45,6 +41,16 @@ module BenchmarkSupport
     end
 
     private
+
+    def spawn_role(role, count, iterations)
+      Array.new(count) do |id|
+        env = {
+          "ARM_WORKER_ROLE" => role, "ARM_WORKER_ID" => id.to_s, "ARM_WORKER_ITERATIONS" => iterations.to_s,
+          "ARM_WORKER_ADAPTER" => @adapter.to_s, "ARM_WORKER_TABLE" => @table
+        }
+        Process.spawn(env, Gem.ruby, WORKER, chdir: GEM_ROOT) # inherits ARM_*/BUNDLE_* env
+      end
+    end
 
     def rebuild_during_storm
       @sizes[:rebuilds].times do
@@ -58,60 +64,10 @@ module BenchmarkSupport
       pids.map do |pid|
         status = Process.wait2(pid).last
         unless status.success?
-          warn "[concurrent_workload] child #{pid} unclean: sig=#{status.termsig} exit=#{status.exitstatus}"
+          warn "[concurrent_workload] worker #{pid} unclean: sig=#{status.termsig} exit=#{status.exitstatus}"
         end
         status.exitstatus || 1
       end
-    end
-
-    def fork_writers
-      Array.new(@sizes[:writers]) { |worker| child { write_batch(worker) } }
-    end
-
-    def fork_readers
-      Array.new(@sizes[:readers]) { child { read_loop } }
-    end
-
-    # A write always commits, but its immediate maintenance may transiently defer under
-    # concurrency — another process holds the refresh guard (AlreadyRefreshingError) or a
-    # rebuild's DDL collides with the maintenance query. Both are RefreshErrors and both
-    # are benign here: the row is durable and the system re-converges. #75 (cross-process
-    # lock) removes these defers in production.
-    def write_batch(worker)
-      @sizes[:writes].times do |i|
-        @write.call(worker, i)
-      rescue ActiveRecord::Materialized::Refresher::RefreshError
-        nil
-      end
-    end
-
-    # A reader must never see a torn/empty cache — the direct proof that a rebuild's
-    # swap is atomic (#81) and that scoped maintenance is transactional.
-    def read_loop
-      @sizes[:reads].times do
-        raise "torn read: empty cache during concurrent maintenance" if @view.unscoped.none?
-      end
-    end
-
-    def child(&block)
-      fork do
-        reconnect! # parent cleared before forking, so this opens a fresh connection
-        ok = run_child(&block)
-        $stderr.flush # exit! skips stdio flushing, which would drop the failure warning
-        exit!(ok ? 0 : 1)
-      end
-    end
-
-    def run_child
-      yield
-      true
-    rescue StandardError => e
-      warn "[concurrent_workload] #{e.class}: #{e.message.lines.first&.strip}"
-      false
-    end
-
-    def reconnect!
-      ActiveRecord::Base.establish_connection(@config)
     end
 
     def converged?

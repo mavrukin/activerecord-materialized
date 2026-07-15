@@ -37,6 +37,12 @@ module IntegrationSchema
       t.references :author, null: false
       t.integer :pages, null: false
     end
+    register_models!
+  end
+
+  # Attach the models to the current connection without recreating tables — used by a
+  # spawned concurrency worker, which connects to tables the parent already provisioned.
+  def register_models!
     MODELS.each(&:reset_column_information)
     MODELS.each { |model| ActiveRecord::Materialized::TableModelRegistry.register(model) }
   end
