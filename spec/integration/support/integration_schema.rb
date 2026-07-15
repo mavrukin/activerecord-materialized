@@ -9,6 +9,9 @@ require_relative "../../../benchmark/support/cdc_scenario"
 module IntegrationSchema
   extend ActiveRecord::Materialized::QueryExpressions
 
+  # A dependency row. category groups the view; amount is summed. `sum` is
+  # deliberate: its Ruby type diverges by engine (Integer on SQLite vs BigDecimal
+  # on MySQL/Postgres), exactly the portability the matrix exercises.
   class LineItem < ActiveRecord::Base
     self.table_name = "arm_line_items"
   end
@@ -47,9 +50,9 @@ module IntegrationSchema
     MODELS.each { |model| ActiveRecord::Materialized::TableModelRegistry.register(model) }
   end
 
-  # #70 CDC-scenario view: count + sum by category (exact integer aggregates).
+  # #70 CDC-scenario view: exact count + sum by category.
   def define_view(table_name)
-    build_view(table_name, :arm_line_items) { IntegrationSchema.line_items_by_category }
+    build_view(table_name, :arm_line_items, source: -> { IntegrationSchema.line_items_by_category })
   end
 
   def line_items_by_category
@@ -61,7 +64,7 @@ module IntegrationSchema
 
   # #84 wide view: every aggregate shape, surfacing cross-engine type inference (#82).
   def define_metrics_view(table_name)
-    build_view(table_name, :arm_line_items) { IntegrationSchema.line_item_metrics }
+    build_view(table_name, :arm_line_items, source: -> { IntegrationSchema.line_item_metrics })
   end
 
   def line_item_metrics
@@ -81,12 +84,10 @@ module IntegrationSchema
   # the view can't take the additive summary-delta path), integer-exact — converges
   # under concurrent cross-process maintenance.
   def define_scoped_view(table_name)
-    Class.new(ActiveRecord::Materialized::View) do
-      self.table_name = table_name
-      depends_on :arm_line_items
-      refresh_on_change :immediate
-      materialized_from { IntegrationSchema.line_item_scoped_metrics }
-    end
+    build_view(
+      table_name, :arm_line_items,
+      changes: :callbacks, source: -> { IntegrationSchema.line_item_scoped_metrics }
+    )
   end
 
   def line_item_scoped_metrics
@@ -99,12 +100,7 @@ module IntegrationSchema
   # #84 join-keyed view: grouped by the JOINED authors.country, scoped-recompute
   # maintained, with a partition_key_for resolver for leaf-table (books) writes.
   def define_pages_by_country_view(table_name)
-    Class.new(ActiveRecord::Materialized::View) do
-      self.table_name = table_name
-      change_source :none
-      depends_on :arm_books, :arm_authors
-      refresh_on_change :immediate
-      materialized_from { IntegrationSchema.pages_by_country }
+    build_view(table_name, :arm_books, :arm_authors, source: -> { IntegrationSchema.pages_by_country }) do
       partition_key_for(:arm_books) do |change|
         ids = [change.before["author_id"], change.after["author_id"]].compact.uniq
         IntegrationSchema::Author.where(id: ids).pluck(:country)
@@ -128,13 +124,19 @@ module IntegrationSchema
     connection.execute("INSERT INTO arm_line_items (category, sku, amount) VALUES #{values.join(', ')}")
   end
 
-  def build_view(table_name, dependency, &source)
+  # Build an anonymous View subclass for a cache table — anonymous per call so no
+  # view-level state leaks across examples. `changes` sets the change source before
+  # depends_on (CDC-relayed :none, the default here, vs callback-fed :callbacks) so a
+  # :none view installs no callbacks; extra class-body DSL (e.g. partition_key_for) goes
+  # in the block.
+  def build_view(table_name, *dependencies, source:, changes: :none, &config)
     Class.new(ActiveRecord::Materialized::View) do
       self.table_name = table_name
-      change_source :none
-      depends_on dependency
+      change_source changes
+      depends_on(*dependencies)
       refresh_on_change :immediate
       materialized_from(&source)
+      class_eval(&config) if config
     end
   end
 end

@@ -30,6 +30,13 @@ module ViewSources
     )
   end
 
+  # A group key projected as a bare Symbol over an INTEGER column — the idiomatic-AR
+  # form the gem's own views avoid (they project Arel attributes). Its cache type must
+  # resolve to the real column type (:integer), not degrade to :string.
+  def count_by_amount
+    Item.group(:amount).select(:amount, count_as(Item.arel_table[:id], as: :tally))
+  end
+
   # A dotted GROUP BY string ("items.category") whose projected column is the bare
   # "category" — exercises qualifier-stripping when matching group keys to columns.
   def item_count_by_dotted_category

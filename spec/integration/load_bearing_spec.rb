@@ -3,7 +3,12 @@
 require_relative "integration_helper"
 
 # Marker module so RSpec/DescribeClass and the spec-file-path convention are met.
-module LoadBearing; end
+module LoadBearing
+  # Cache-column type groups for the metrics view — constants so the assertion isn't a
+  # fresh array literal per adapter iteration (Performance/CollectionLiteralInLoop).
+  INTEGER_COLUMNS = %w[item_count min_amount max_amount sku_count].freeze
+  DECIMAL_COLUMNS = %w[total_amount avg_amount].freeze
+end
 
 # #84 — load-bearing single-process scenarios on every configured engine: a variety
 # of aggregate shapes, mutations, and volume, asserting the view converges to the
@@ -33,17 +38,27 @@ RSpec.describe LoadBearing, :db_matrix do
         expect(converged?(view)).to be(true)
       end
 
-      it "infers engine-appropriate, consistent cache-column types for every aggregate shape" do
+      it "infers engine-appropriate types and exact values for every aggregate shape" do
         IntegrationSchema.bulk_seed_line_items(60)
+        # controlled rows: a fractional average (1, 2 -> 1.5) and an INT-overflowing sum
+        # (3e9). Before #82's fix these shipped silently wrong — a bare DECIMAL(10,0)
+        # rounds 1.5 -> 2, and a 4-byte INT SUM column overflows at 3e9.
+        IntegrationSchema::LineItem.create!(category: "frac-avg", amount: 1)
+        IntegrationSchema::LineItem.create!(category: "frac-avg", amount: 2)
+        3.times { IntegrationSchema::LineItem.create!(category: "big-sum", amount: 1_000_000_000) }
         view = IntegrationSchema.define_metrics_view("mv_metrics")
         view.rebuild!(confirm: true)
         types = view.columns_hash.transform_values(&:type)
 
-        # COUNT(*)/SUM(int)/MIN/MAX(int)/COUNT(DISTINCT) are integers; AVG is decimal —
-        # consistent across engines (was engine-divergent / all-:string before #82)
-        integer_columns = %w[item_count total_amount min_amount max_amount sku_count]
-        expect(integer_columns.map { |name| types[name] }).to all(eq(:integer))
-        expect(types["avg_amount"]).to eq(:decimal)
+        # COUNT(*)/MIN/MAX(int)/COUNT(DISTINCT) are integers; SUM and AVG are decimals
+        # (MySQL widens SUM(int) to DECIMAL; an average carries fractional digits) — the
+        # same types on every engine (was engine-divergent / all-:string before #82)
+        expect(LoadBearing::INTEGER_COLUMNS.map { |name| types[name] }).to all(eq(:integer))
+        expect(LoadBearing::DECIMAL_COLUMNS.map { |name| types[name] }).to all(eq(:decimal))
+
+        # and the values are exact — not truncated by DECIMAL(10,0) or lost to INT overflow
+        expect(view.where(category: "frac-avg").pick(:avg_amount)).to eq(1.5)
+        expect(view.where(category: "big-sum").pick(:total_amount)).to eq(3_000_000_000)
       end
 
       it "scopes maintenance to the resolved partition for a joined leaf-table write" do

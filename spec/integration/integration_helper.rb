@@ -41,7 +41,7 @@ module IntegrationHelper
 
   # True when the view's cache equals what its source relation would produce now.
   def converged?(view)
-    BenchmarkSupport::ResultComparison.equivalent?(view.unscoped.to_a, view.resolved_source.to_a)
+    BenchmarkSupport::ResultComparison.converged?(view)
   end
 end
 

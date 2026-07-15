@@ -26,14 +26,16 @@ RSpec.describe ActiveRecord::Materialized::MigrationBuilder do
   it "infers column names and types from the source relation" do
     types_by_name = builder.column_definitions.to_h { |column| [column.name, column.type] }
 
-    expect(types_by_name).to include("category" => :string, "total_amount" => :integer, "row_count" => :integer)
+    expect(types_by_name).to include("category" => :string, "total_amount" => :decimal, "row_count" => :integer)
   end
 
   it "renders a valid create_table migration through the generator template" do
+    # structure + every inferred column; SUM widens to decimal, with precision/scale rendered
     expect(rendered_migration).to include("class CreateMvOrdersSummary < ActiveRecord::Migration[")
-    expect(rendered_migration).to include("create_table :mv_orders_summary do |t|")
-    expect(rendered_migration).to include("t.string :category")
-    expect(rendered_migration).to include("t.integer :total_amount")
+      .and include("create_table :mv_orders_summary do |t|")
+      .and include("t.string :category")
+      .and include("t.decimal :total_amount, precision: 38, scale: 0")
+      .and include("t.integer :row_count")
     expect { RubyVM::InstructionSequence.compile(rendered_migration) }.not_to raise_error
   end
 end

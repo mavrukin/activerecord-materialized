@@ -13,7 +13,17 @@ RSpec.describe ActiveRecord::Materialized::CacheTableSchema do
     types = described_class.column_definitions(ActiveRecord::Base.connection, relation).to_h { |d| [d.name, d.type] }
 
     expect(types["category"]).to eq(:string)      # group key -> source column type
-    expect(types["total_amount"]).to eq(:integer) # SUM over an integer column
+    expect(types["total_amount"]).to eq(:decimal) # SUM widens to DECIMAL (MySQL returns SUM(int) as DECIMAL)
     expect(types["row_count"]).to eq(:integer)    # COUNT
+  end
+
+  it "resolves a bare-Symbol group key to its real column type, not :string" do
+    # idiomatic AR groups/selects by Symbol; only Arel-attribute projections were
+    # resolved before, so a Symbol degraded to :string and broke the build on Postgres
+    relation = ViewSources.count_by_amount # group(:amount).select(:amount, COUNT(id) AS tally)
+    types = described_class.column_definitions(ActiveRecord::Base.connection, relation).to_h { |d| [d.name, d.type] }
+
+    expect(types["amount"]).to eq(:integer) # the bare Symbol's real (integer) column type
+    expect(types["tally"]).to eq(:integer)  # COUNT
   end
 end

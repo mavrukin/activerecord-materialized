@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../../../benchmark/support/result_comparison"
+
 module BenchmarkSupport
   # Stresses a view under production-like load by running concurrent writer and reader
   # workers as separate SPAWNED processes (see concurrent_worker.rb) while the parent
@@ -8,6 +10,12 @@ module BenchmarkSupport
   # connection, so this works on Postgres too (libpq is not fork-safe). No sleep —
   # bounded iteration counts; assertions are on worker exit status + convergence.
   #
+  # The parent keeps rebuilding for as long as any worker is alive (reaping each as it
+  # exits), so reader queries run concurrently with the parent's atomic swaps — the
+  # window the #81 no-torn-read guarantee protects. A fixed count of rebuilds would
+  # instead finish during the workers' ~500ms boot, before a single query is issued,
+  # and exercise nothing.
+  #
   # Convergence is checked after a final rebuild (a full, deterministic re-aggregation
   # from the now-quiescent source). Whether the *scoped* path converges without a
   # rebuild under concurrent maintenance is #75's concern (a cross-process lock);
@@ -15,7 +23,7 @@ module BenchmarkSupport
   # no worker crashes, no writer loses a committed row, no reader sees a torn/empty
   # cache — and the system re-converges.
   class ConcurrentWorkload
-    DEFAULT_SIZES = { writers: 4, readers: 2, writes: 15, reads: 40, rebuilds: 4 }.freeze
+    DEFAULT_SIZES = { writers: 4, readers: 2, writes: 15, reads: 2_000 }.freeze
     GEM_ROOT = File.expand_path("../../..", __dir__)
     WORKER = File.expand_path("concurrent_worker.rb", __dir__)
 
@@ -34,9 +42,8 @@ module BenchmarkSupport
     def run
       pids = spawn_role("writer", @sizes[:writers], @sizes[:writes]) +
              spawn_role("reader", @sizes[:readers], @sizes[:reads])
-      rebuild_during_storm
-      statuses = reap(pids)
-      @view.rebuild!(confirm: true) # storm over: deterministic re-aggregation from the source
+      statuses = rebuild_while_workers_run(pids) # atomic swaps overlap live reads + writes
+      @view.rebuild!(confirm: true)              # storm over: deterministic re-aggregation
       Result.new(statuses: statuses, converged: converged?)
     end
 
@@ -52,26 +59,39 @@ module BenchmarkSupport
       end
     end
 
-    def rebuild_during_storm
-      @sizes[:rebuilds].times do
-        @view.rebuild!(confirm: true) # force atomic swaps while readers read
-      rescue ActiveRecord::Materialized::Refresher::RefreshError
-        nil # a worker holds the refresh guard / collides mid-cycle; skip (benign under concurrency)
+    # Rebuild the view repeatedly for the whole time the workers run, so an atomic swap
+    # overlaps their in-flight queries; reap each worker as it exits (non-blocking) and
+    # return exit statuses in pid order. Each turn does a real rebuild (DB I/O), which
+    # paces the loop without a sleep.
+    def rebuild_while_workers_run(pids)
+      statuses = {}
+      until statuses.size == pids.size
+        rebuild_once
+        pids.each do |pid|
+          next if statuses.key?(pid)
+
+          reaped, status = Process.wait2(pid, Process::WNOHANG)
+          statuses[pid] = exit_code(status) if reaped
+        end
       end
+      pids.map { |pid| statuses.fetch(pid) }
     end
 
-    def reap(pids)
-      pids.map do |pid|
-        status = Process.wait2(pid).last
-        unless status.success?
-          warn "[concurrent_workload] worker #{pid} unclean: sig=#{status.termsig} exit=#{status.exitstatus}"
-        end
-        status.exitstatus || 1
+    def rebuild_once
+      @view.rebuild!(confirm: true) # force an atomic swap while readers read
+    rescue ActiveRecord::Materialized::Refresher::RefreshError
+      nil # a worker holds the refresh guard / collides mid-cycle; skip (benign under concurrency)
+    end
+
+    def exit_code(status)
+      unless status.success?
+        warn "[concurrent_workload] worker unclean: sig=#{status.termsig} exit=#{status.exitstatus}"
       end
+      status.exitstatus || 1
     end
 
     def converged?
-      ResultComparison.equivalent?(@view.unscoped.to_a, @view.resolved_source.to_a)
+      ResultComparison.converged?(@view)
     end
   end
 end

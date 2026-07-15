@@ -11,6 +11,13 @@ module BenchmarkSupport
 
     module_function
 
+    # True when a view's cache equals what its source relation would produce right now.
+    # The single definition of "did the materialized result converge?" shared by the
+    # integration matrix's helper and its concurrency workload.
+    def converged?(view)
+      equivalent?(view.unscoped.to_a, view.resolved_source.to_a)
+    end
+
     def equivalent?(left, right)
       return false if left.size != right.size
 
