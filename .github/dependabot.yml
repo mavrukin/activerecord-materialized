@@ -1,0 +1,14 @@
+# Keep GitHub Actions on their latest versions so CI tracks current runtimes
+# (e.g. the Node.js version actions run on) instead of silently aging into
+# deprecation. Dependabot opens a grouped PR when a new version lands; that PR's
+# CI run is the signal a bump is safe — or the incentive to fix it if it isn't.
+# See #85.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
