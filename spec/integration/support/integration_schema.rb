@@ -71,6 +71,25 @@ module IntegrationSchema
     )
   end
 
+  # #84 concurrency view: callback-fed, scoped-recompute (MAX is non-distributive, so
+  # the view can't take the additive summary-delta path), integer-exact — converges
+  # under concurrent cross-process maintenance.
+  def define_scoped_view(table_name)
+    Class.new(ActiveRecord::Materialized::View) do
+      self.table_name = table_name
+      depends_on :arm_line_items
+      refresh_on_change :immediate
+      materialized_from { IntegrationSchema.line_item_scoped_metrics }
+    end
+  end
+
+  def line_item_scoped_metrics
+    items = LineItem.arel_table
+    LineItem.group(:category).select(
+      items[:category], count_all_as(as: :item_count), max_as(items[:amount], as: :max_amount)
+    )
+  end
+
   # #84 join-keyed view: grouped by the JOINED authors.country, scoped-recompute
   # maintained, with a partition_key_for resolver for leaf-table (books) writes.
   def define_pages_by_country_view(table_name)
