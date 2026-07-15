@@ -35,7 +35,7 @@ end
 
 desc "Run the real-DB integration matrix (honors ARM_ONLY=sqlite,mysql,postgres)"
 task integration: :environment do
-  sh "bundle exec rspec spec/integration/cdc_matrix_spec.rb"
+  sh "bundle exec rspec spec/integration --tag db_matrix"
 end
 
 namespace :integration do

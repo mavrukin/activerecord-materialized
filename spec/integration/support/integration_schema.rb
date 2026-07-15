@@ -2,51 +2,114 @@
 
 require_relative "../../../benchmark/support/cdc_scenario"
 
-# Schema-agnostic fixtures for the real-DB integration matrix (#70): one
-# dependency table, its model, and a count/sum-by-category materialized view fed
-# by the CDC ingestion API (change_source :none). Portable across SQLite, MySQL,
-# and Postgres via ActiveRecord schema statements — no raw DDL.
+# Schema, models, and views for the real-DB integration matrix (#70, #84), portable
+# across SQLite / MySQL / Postgres via ActiveRecord schema statements. The CDC
+# scenario (#70) drives line_items_by_category; the load-bearing suite (#84) adds a
+# wide multi-aggregate view (line_item_metrics) and a join-keyed view (pages_by_country).
 module IntegrationSchema
   extend ActiveRecord::Materialized::QueryExpressions
 
-  # A dependency row. category groups the view; amount is summed. `sum` is
-  # deliberate: its Ruby type diverges by engine (Integer on SQLite vs BigDecimal
-  # on MySQL/Postgres), exactly the portability the matrix exercises.
   class LineItem < ActiveRecord::Base
     self.table_name = "arm_line_items"
   end
 
+  class Author < ActiveRecord::Base
+    self.table_name = "arm_authors"
+  end
+
+  class Book < ActiveRecord::Base
+    self.table_name = "arm_books"
+    belongs_to :author, class_name: "IntegrationSchema::Author"
+  end
+
+  MODELS = [LineItem, Author, Book].freeze
+
   module_function
 
-  # (Re)create the dependency table on the current connection and register its
-  # model, so the same view definition runs against whichever adapter is active.
   def provision!(connection = ActiveRecord::Base.connection)
     connection.create_table(:arm_line_items, force: true) do |t|
       t.string :category, null: false
+      t.string :sku # nullable: the CDC scenario writes rows without it
       t.integer :amount, null: false
     end
-    LineItem.reset_column_information
-    ActiveRecord::Materialized::TableModelRegistry.register(LineItem)
+    connection.create_table(:arm_authors, force: true) { |t| t.string :country, null: false }
+    connection.create_table(:arm_books, force: true) do |t|
+      t.references :author, null: false
+      t.integer :pages, null: false
+    end
+    MODELS.each(&:reset_column_information)
+    MODELS.each { |model| ActiveRecord::Materialized::TableModelRegistry.register(model) }
   end
 
-  # An anonymous, CDC-fed (change_source :none), immediately-refreshed view over
-  # arm_line_items. Anonymous per call so no view-level state leaks across examples.
+  # #70 CDC-scenario view: count + sum by category (exact integer aggregates).
   def define_view(table_name)
-    Class.new(ActiveRecord::Materialized::View) do
-      self.table_name = table_name
-      change_source :none
-      depends_on :arm_line_items
-      refresh_on_change :immediate
-      materialized_from { IntegrationSchema.line_items_by_category }
-    end
+    build_view(table_name, :arm_line_items) { IntegrationSchema.line_items_by_category }
   end
 
   def line_items_by_category
-    line_items = LineItem.arel_table
+    items = LineItem.arel_table
     LineItem.group(:category).select(
-      line_items[:category],
-      count_all_as(as: :item_count),
-      sum_as(line_items[:amount], as: :total_amount)
+      items[:category], count_all_as(as: :item_count), sum_as(items[:amount], as: :total_amount)
     )
+  end
+
+  # #84 wide view: every aggregate shape, surfacing cross-engine type inference (#82).
+  def define_metrics_view(table_name)
+    build_view(table_name, :arm_line_items) { IntegrationSchema.line_item_metrics }
+  end
+
+  def line_item_metrics
+    items = LineItem.arel_table
+    LineItem.group(:category).select(
+      items[:category],
+      count_all_as(as: :item_count),
+      sum_as(items[:amount], as: :total_amount),
+      avg_as(items[:amount], as: :avg_amount),
+      min_as(items[:amount], as: :min_amount),
+      max_as(items[:amount], as: :max_amount),
+      count_distinct_as(items[:sku], as: :sku_count)
+    )
+  end
+
+  # #84 join-keyed view: grouped by the JOINED authors.country, scoped-recompute
+  # maintained, with a partition_key_for resolver for leaf-table (books) writes.
+  def define_pages_by_country_view(table_name)
+    Class.new(ActiveRecord::Materialized::View) do
+      self.table_name = table_name
+      change_source :none
+      depends_on :arm_books, :arm_authors
+      refresh_on_change :immediate
+      materialized_from { IntegrationSchema.pages_by_country }
+      partition_key_for(:arm_books) do |change|
+        ids = [change.before["author_id"], change.after["author_id"]].compact.uniq
+        IntegrationSchema::Author.where(id: ids).pluck(:country)
+      end
+    end
+  end
+
+  def pages_by_country
+    authors = Author.arel_table
+    Book.joins(:author).group(authors[:country]).select(
+      authors[:country], sum_as(Book.arel_table[:pages], as: :total_pages), count_all_as(as: :book_count)
+    )
+  end
+
+  # Bulk-load line items across many categories/skus via a single raw INSERT — fast,
+  # and (like a real bulk / out-of-band write) bypassing ActiveRecord entirely.
+  def bulk_seed_line_items(count, connection = ActiveRecord::Base.connection)
+    values = Array.new(count) do |i|
+      "(#{connection.quote("cat-#{i % 100}")}, #{connection.quote("sku-#{i % 250}")}, #{(i % 50) + 1})"
+    end
+    connection.execute("INSERT INTO arm_line_items (category, sku, amount) VALUES #{values.join(', ')}")
+  end
+
+  def build_view(table_name, dependency, &source)
+    Class.new(ActiveRecord::Materialized::View) do
+      self.table_name = table_name
+      change_source :none
+      depends_on dependency
+      refresh_on_change :immediate
+      materialized_from(&source)
+    end
   end
 end

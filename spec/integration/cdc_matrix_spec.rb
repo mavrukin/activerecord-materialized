@@ -13,18 +13,7 @@ module CdcMatrix; end
 RSpec.describe CdcMatrix, :db_matrix do
   IntegrationAdapters.candidates.each do |profile|
     context "with #{profile.label}" do
-      before do
-        unless profile.available?
-          reason = "#{profile.label} unavailable — #{profile.unavailable_reason}"
-          # An adapter named explicitly via ARM_ONLY (e.g. a per-adapter CI job) must
-          # be reachable: fail rather than skip, so a green badge always means the
-          # engine was actually exercised. Otherwise skip (local run-what-I-have).
-          raise reason if profile.required?
-
-          skip(reason)
-        end
-        establish_adapter!(profile)
-      end
+      before { with_adapter!(profile) }
 
       let(:view) { IntegrationSchema.define_view("mv_line_items_by_category") }
 

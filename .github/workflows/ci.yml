@@ -61,7 +61,7 @@ jobs:
           bundler-cache: true
 
       - name: Run unit and integration specs
-        run: bundle exec rspec --exclude-pattern "spec/active_record/materialized/async_refresher_flush_spec.rb,spec/integration/cdc_matrix_spec.rb"
+        run: bundle exec rspec --exclude-pattern "spec/active_record/materialized/async_refresher_flush_spec.rb" --tag '~db_matrix'
 
   benchmark-integration:
     name: Benchmark integration
