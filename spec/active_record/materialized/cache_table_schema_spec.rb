@@ -26,4 +26,23 @@ RSpec.describe ActiveRecord::Materialized::CacheTableSchema do
     expect(types["amount"]).to eq(:integer) # the bare Symbol's real (integer) column type
     expect(types["tally"]).to eq(:integer)  # COUNT
   end
+
+  it "types a float SUM as :float and clamps a high-scale AVG to a valid decimal" do
+    connection = ActiveRecord::Base.connection
+    connection.create_table(:arm_type_probe, force: true) do |t|
+      t.float :ratio                                # a float SUM must stay :float, not truncate to DECIMAL(38,0)
+      t.decimal :precise, precision: 38, scale: 28  # AVG's +4 headroom would exceed MySQL's max scale of 30
+    end
+    probe = Class.new(ActiveRecord::Base) { self.table_name = "arm_type_probe" }
+    arel = probe.arel_table
+    relation = probe.select(arel[:ratio].sum.as("ratio_sum"), arel[:precise].average.as("precise_avg"))
+    columns = described_class.column_definitions(connection, relation).index_by(&:name)
+
+    # a float source stays :float, not a scale-0 decimal that would truncate the sum
+    expect(columns["ratio_sum"].type).to eq(:float)
+    # AVG scale = source 28 + 4 headroom, clamped to MySQL's max of 30
+    expect([columns["precise_avg"].type, columns["precise_avg"].scale]).to eq([:decimal, 30])
+  ensure
+    connection.drop_table(:arm_type_probe, if_exists: true)
+  end
 end

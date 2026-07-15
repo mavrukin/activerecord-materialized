@@ -50,7 +50,7 @@ module IntegrationSchema
     MODELS.each { |model| ActiveRecord::Materialized::TableModelRegistry.register(model) }
   end
 
-  # #70 CDC-scenario view: exact count + sum by category.
+  # #70 CDC-scenario view: exact count + sum by category (COUNT integer, SUM decimal).
   def define_view(table_name)
     build_view(table_name, :arm_line_items, source: -> { IntegrationSchema.line_items_by_category })
   end

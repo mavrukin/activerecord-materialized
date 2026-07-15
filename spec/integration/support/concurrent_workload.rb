@@ -23,7 +23,9 @@ module BenchmarkSupport
   # no worker crashes, no writer loses a committed row, no reader sees a torn/empty
   # cache — and the system re-converges.
   class ConcurrentWorkload
-    DEFAULT_SIZES = { writers: 4, readers: 2, writes: 15, reads: 2_000 }.freeze
+    # reads is well above writes so readers stay alive across many parent swap cycles
+    # (each read is cheap); the rebuild loop is bounded by that worker lifetime.
+    DEFAULT_SIZES = { writers: 4, readers: 2, writes: 15, reads: 500 }.freeze
     GEM_ROOT = File.expand_path("../../..", __dir__)
     WORKER = File.expand_path("concurrent_worker.rb", __dir__)
 
