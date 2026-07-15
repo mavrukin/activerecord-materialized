@@ -1,0 +1,56 @@
+# Reusable integration-matrix workflow (#70): one adapter per call, so each
+# caller (db-mysql / db-postgres / db-sqlite) yields its own status badge —
+# a single matrix job would produce only one combined badge.
+#
+# The databases are started from docker-compose.yml (single source of the CDC
+# server flags, host ports, and healthchecks) rather than duplicated `docker run`
+# args. The targeted adapter (ARM_ONLY) must be reachable or the spec fails, so a
+# green badge always means that engine was actually exercised.
+name: Integration
+
+on:
+  workflow_call:
+    inputs:
+      adapter:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  # Match the host ports published by docker-compose.yml.
+  ARM_MYSQL_HOST: 127.0.0.1
+  ARM_MYSQL_PORT: "3307"
+  ARM_MYSQL_USER: root
+  ARM_MYSQL_PASSWORD: root
+  ARM_MYSQL_DATABASE: arm_test
+  ARM_PG_URL: postgres://postgres:postgres@127.0.0.1:5433/arm_test
+  # Install the pg/trilogy adapters (Gemfile install_if is otherwise a no-op).
+  ARM_INTEGRATION: "1"
+
+jobs:
+  integration:
+    name: ${{ inputs.adapter }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # --wait blocks until the compose healthcheck passes (its own retry budget),
+      # so no separate wait loop is needed. SQLite runs in-process — no container.
+      - name: Start database
+        if: inputs.adapter != 'sqlite'
+        run: docker compose up -d --wait ${{ inputs.adapter }}
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+          bundler-cache: true
+
+      - name: Run integration matrix (${{ inputs.adapter }})
+        env:
+          ARM_ONLY: ${{ inputs.adapter }}
+        run: |
+          bundle exec rake integration
+          echo "### Integration matrix: \`${{ inputs.adapter }}\` passed ✅" >> "$GITHUB_STEP_SUMMARY"

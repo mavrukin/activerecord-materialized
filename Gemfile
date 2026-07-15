@@ -28,3 +28,13 @@ group :development, :test do
   gem "yard", "~> 0.9", require: false
   gem "yard-sorbet", "~> 0.9", require: false
 end
+
+# Real-database adapters for the integration matrix (spec/integration, #70).
+# NOT installed by default (install_if is false) so the fast suite and
+# contributors without client libraries never compile native extensions. Enable
+# with `ARM_INTEGRATION=1 bundle install` — the integration CI workflows and
+# docs/integration-testing.md do this.
+install_if -> { ENV["ARM_INTEGRATION"] == "1" } do
+  gem "pg", "~> 1.5"
+  gem "trilogy", "~> 2.8"
+end

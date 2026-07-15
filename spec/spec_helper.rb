@@ -51,7 +51,7 @@ RSpec.configure do |config|
   config.before(:each) do
     ActiveRecord::Materialized::AsyncRefresher.reset!
     ActiveRecord::Materialized::AsyncRefresher.paused = false
-    unless RSpec.current_example.metadata[:benchmark]
+    unless RSpec.current_example.metadata[:benchmark] || RSpec.current_example.metadata[:db_matrix]
       ActiveRecord::Base.establish_connection(adapter: "sqlite3", database: ":memory:")
       ActiveRecord::Base.connection.create_table :items, force: true do |t|
         t.string :category, null: false
