@@ -135,14 +135,15 @@ module ActiveRecord
         column ? column_from_source(column, name) : nil
       end
 
-      # A column for a group key projected as a bare Symbol (idiomatic AR:
-      # `group(:region).select(:region, ...)`), resolved against the source model's own
-      # schema. Only a Symbol is unambiguously a base-table column; a raw-SQL/String
-      # projection may name a JOINED column that merely collides with a base column, so it
-      # falls through to :string rather than risk typing it from the wrong table.
+      # A column projected directly from the base table — a bare Symbol group key
+      # (`group(:region).select(:region, ...)`) or an implicit SELECT * (no projection
+      # node, so `node` is nil) — resolved against the source model's own schema. A
+      # raw-SQL/String or computed projection is NOT resolved this way: it may name a
+      # JOINED column that merely collides with a base column, so it falls through to
+      # :string rather than risk typing it from the wrong table.
       sig { params(relation: ::ActiveRecord::Relation, node: T.untyped, name: String).returns(T.nilable(Definition)) }
       def named_column(relation, node, name)
-        return nil unless node.is_a?(::Symbol)
+        return nil unless node.nil? || node.is_a?(::Symbol)
 
         column = T.unsafe(relation).klass.columns_hash[name]
         column ? column_from_source(column, name) : nil

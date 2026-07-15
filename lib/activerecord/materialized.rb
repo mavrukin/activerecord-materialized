@@ -43,6 +43,7 @@ require_relative "materialized/summary_delta"
 require_relative "materialized/summary_delta_builder"
 require_relative "materialized/query_expressions"
 require_relative "materialized/cache_table_schema"
+# must follow cache_table_schema: aliases its ColumnDefinition at load time
 require_relative "materialized/column_type_inference"
 require_relative "materialized/migration_builder"
 require_relative "materialized/schema_verifier"

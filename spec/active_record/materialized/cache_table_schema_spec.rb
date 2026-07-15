@@ -45,4 +45,20 @@ RSpec.describe ActiveRecord::Materialized::CacheTableSchema do
   ensure
     connection.drop_table(:arm_type_probe, if_exists: true)
   end
+
+  it "resolves implicit SELECT-* columns (nil projection nodes) to their real base types" do
+    connection = ActiveRecord::Base.connection
+    connection.create_table(:arm_star_probe, id: false, force: true) do |t|
+      t.integer :hits
+      t.decimal :amount, precision: 12, scale: 2
+    end
+    probe = Class.new(ActiveRecord::Base) { self.table_name = "arm_star_probe" }
+    # a non-aggregate SELECT-* source: select_values is empty, so every projected node is nil
+    types = described_class.column_definitions(connection, probe.all).index_by(&:name).transform_values(&:type)
+
+    expect(types["hits"]).to eq(:integer) # nil node resolved by name, not degraded to :string
+    expect(types["amount"]).to eq(:decimal)
+  ensure
+    connection.drop_table(:arm_star_probe, if_exists: true)
+  end
 end
