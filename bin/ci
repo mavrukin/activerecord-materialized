@@ -6,9 +6,6 @@ cd "$(dirname "$0")/.."
 echo "==> RuboCop"
 bundle exec rubocop lib/ bin/ --parallel
 
-echo "==> Sorbet"
-bundle exec srb tc
-
 # Mirror CI (.github/workflows/ci.yml): the heavy benchmark integration
 # spec leaks state across the random-ordered suite, so CI runs the fast
 # suite and that spec in separate jobs. Do the same here for a reliable

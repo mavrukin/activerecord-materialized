@@ -1,4 +1,3 @@
-# typed: strict
 # frozen_string_literal: true
 
 module ActiveRecord
@@ -39,19 +38,14 @@ module ActiveRecord
     #   (partitions found divergent and repaired with scoped maintenance), +:deferred+
     #   (+true+ when a concurrent refresh deferred the run to the next tick).
     module Instrumentation
-      extend T::Sig
-
       READ = "read.active_record_materialized"
       REFRESH = "refresh.active_record_materialized"
       MAINTENANCE = "maintenance.active_record_materialized"
       RECONCILE = "reconcile.active_record_materialized"
 
       class << self
-        extend T::Sig
-
         # Fired once per routed read. The staleness lookup costs a metadata read,
         # so it is skipped entirely unless a subscriber is attached.
-        sig { params(view_class: ViewClass, source: Symbol).void }
         def read(view_class, source:)
           return unless ::ActiveSupport::Notifications.notifier.listening?(READ)
 
@@ -66,13 +60,6 @@ module ActiveRecord
         # {RefreshResult}; the row count and skipped flag are read back from it,
         # while the block annotates the payload with the +:mode+ and
         # +:partition_count+ it can only know mid-flight.
-        sig do
-          params(
-            view_class: ViewClass,
-            operation: Symbol,
-            block: T.proc.params(payload: T::Hash[Symbol, T.untyped]).returns(RefreshResult)
-          ).returns(RefreshResult)
-        end
         def refresh(view_class, operation:, &block)
           ::ActiveSupport::Notifications.instrument(REFRESH, view: view_class, operation: operation) do |payload|
             result = yield(payload)
@@ -83,11 +70,6 @@ module ActiveRecord
         end
 
         # Fired once per dependency write that records pending maintenance.
-        sig do
-          params(
-            view_class: ViewClass, change: WriteChange, path: Symbol, scope: Symbol, partition_count: Integer
-          ).void
-        end
         def maintenance(view_class, change:, path:, scope:, partition_count:)
           ::ActiveSupport::Notifications.instrument(
             MAINTENANCE,
@@ -98,11 +80,6 @@ module ActiveRecord
 
         # Fired once per {Reconciler} run — after it verifies and (if needed) repairs
         # via scoped maintenance — carrying the run's mode, repaired count, and defer flag.
-        sig do
-          params(
-            view_class: ViewClass, mode: Symbol, repaired_partition_count: Integer, deferred: T::Boolean
-          ).void
-        end
         def reconcile(view_class, mode:, repaired_partition_count:, deferred:)
           ::ActiveSupport::Notifications.instrument(
             RECONCILE,
@@ -113,7 +90,6 @@ module ActiveRecord
 
         private
 
-        sig { params(view_class: ViewClass).returns(T.nilable(Float)) }
         def staleness_for(view_class)
           last_refreshed_at = view_class.metadata.last_refreshed_at
           return nil if last_refreshed_at.nil?

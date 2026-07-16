@@ -1,4 +1,3 @@
-# typed: strict
 # frozen_string_literal: true
 
 module ActiveRecord
@@ -9,22 +8,17 @@ module ActiveRecord
     #
     # @api private
     class ReadRouter
-      extend T::Sig
-
-      sig { params(view_class: ViewClass).void }
       def initialize(view_class)
         @view_class = view_class
       end
 
       # Routing for reads with no partition predicate to exploit.
-      sig { returns(T.untyped) }
       def scope
         @view_class.materialized? ? cache : cold
       end
 
       # Per-partition fast path for keyed reads: serve fresh partitions from the
       # cache, otherwise read through and enqueue maintenance (populate-on-read).
-      sig { params(args: T::Array[T.untyped]).returns(T.untyped) }
       def partition_scope(args)
         return cache if @view_class.materialized?
 
@@ -38,19 +32,16 @@ module ActiveRecord
 
       private
 
-      sig { returns(T.untyped) }
       def cache
         Instrumentation.read(@view_class, source: :cache)
-        T.unsafe(@view_class).unscoped
+        @view_class.unscoped
       end
 
-      sig { returns(T.untyped) }
       def cold
         Instrumentation.read(@view_class, source: @view_class.resolved_cold_read_strategy)
         ColdRead.new(@view_class).scope
       end
 
-      sig { params(keys: T::Array[T.untyped]).void }
       def enqueue_partition_maintenance(keys)
         MaintenanceStore.new(@view_class).merge!(MaintenanceDelta.scoped(keys))
         RefreshScheduler.schedule(@view_class)

@@ -1,4 +1,3 @@
-# typed: strict
 # frozen_string_literal: true
 
 module ActiveRecord
@@ -18,20 +17,13 @@ module ActiveRecord
     #   @return [Time, nil] when the refresh completed (nil when skipped)
     # @!attribute [r] skipped
     #   @return [Boolean] true when there was nothing to do (e.g. an unmaintainable view)
-    class RefreshResult < T::Struct
-      extend T::Sig
-
-      const :view_class, T.class_of(View)
-      const :row_count, Integer
-      const :duration_ms, Integer
-      const :refreshed_at, T.nilable(Timestamp)
-      const :skipped, T::Boolean, default: false
+    RefreshResult = Data.define(:view_class, :row_count, :duration_ms, :refreshed_at, :skipped) do
+      def initialize(view_class:, row_count:, duration_ms:, refreshed_at: nil, skipped: false) = super
 
       # A no-op result, returned when refresh! was requested on a view that is
       # not maintainable.
       #
       # @return [RefreshResult]
-      sig { params(view_class: T.class_of(View)).returns(RefreshResult) }
       def self.skipped(view_class)
         new(view_class: view_class, row_count: 0, duration_ms: 0, refreshed_at: nil, skipped: true)
       end

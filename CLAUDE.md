@@ -18,7 +18,7 @@ Follow this end-to-end flow for any non-trivial unit of work:
 
 ### Pre-commit / pre-push checks are mandatory
 
-**NEVER skip, bypass, or disable pre-commit or pre-push checks under any circumstances.** Do not use `--no-verify`, do not work around missing hooks, do not proceed past a skipped or failing check. The lefthook gates (RuboCop, Sorbet, RSpec, strict-sigils) must always run and pass before a commit or push lands.
+**NEVER skip, bypass, or disable pre-commit or pre-push checks under any circumstances.** Do not use `--no-verify`, do not work around missing hooks, do not proceed past a skipped or failing check. The lefthook gates (RuboCop, RSpec) must always run and pass before a commit or push lands.
 
 If the hooks cannot run (e.g. `lefthook` not installed — `Can't find lefthook in PATH`) or a check fails in a way you cannot resolve, **stop and ask the user for guidance** rather than committing/pushing anyway. First attempt to fix it properly (e.g. `bundle exec lefthook install`, or run the equivalent checks manually via `bin/ci`); only if that genuinely hits a wall do you ask how to proceed.
 
@@ -26,9 +26,9 @@ If the hooks cannot run (e.g. `lefthook` not installed — `Can't find lefthook 
 
 **Always make new commits; never amend, rebase, squash, reset, or otherwise rewrite commit history.** No `git commit --amend`, no `git rebase` (interactive or otherwise), no `git reset` that discards commits, no force-pushing. If something needs fixing after a commit, add a follow-up commit.
 
-### Never disable lint / type rules
+### Never disable lint rules
 
-**Never silence a failing RuboCop, Sorbet, or other lint/type check by disabling the rule.** No inline `# rubocop:disable`, no `# typed: false`/sigil downgrades, no loosening a cop's config to get a line to pass. A failing check means the code needs fixing — refactor it (split a method to lower complexity, choose an idiomatic construct, restructure a spec to describe a real class/module) until it passes honestly.
+**Never silence a failing RuboCop (or other lint) check by disabling the rule.** No inline `# rubocop:disable`, no loosening a cop's config to get a line to pass. A failing check means the code needs fixing — refactor it (split a method to lower complexity, choose an idiomatic construct, restructure a spec to describe a real class/module) until it passes honestly.
 
 ### Scripts and analysis: prefer Python, never Perl
 
@@ -46,8 +46,8 @@ Aim for code that reads as an **exemplar of idiomatic Ruby/Rails**:
 ## Commands
 
 ```bash
-bin/setup                       # bundle install + lefthook install + tapioca gems
-bin/ci                          # run the full local gate: RuboCop, Sorbet, RSpec
+bin/setup                       # bundle install + lefthook install
+bin/ci                          # run the full local gate: RuboCop, RSpec
 
 bundle exec rspec               # full test suite
 bundle exec rspec path/to/foo_spec.rb            # single file
@@ -55,8 +55,6 @@ bundle exec rspec path/to/foo_spec.rb:42         # single example by line
 bin/affected-specs <files...>   # print specs affected by changed files (mapping logic, see below)
 
 bundle exec rubocop lib/ bin/ --parallel         # lint (CI scope)
-bundle exec srb tc              # Sorbet typecheck
-bundle exec tapioca gems        # regenerate gem RBIs after dependency changes
 ```
 
 Benchmarks (JOB-schema SQLite, see `benchmark/DATA.md`):
@@ -73,12 +71,12 @@ bundle exec rake benchmark:verify_updates            # proves refresh-on-write
 Local `lefthook` hooks are **scoped to changed files** for speed; CI (`.github/workflows/ci.yml`) runs everything. Key consequences:
 
 - `async_refresher_flush_spec.rb` is the **heavy benchmark integration spec**. It is *excluded* from the main RSpec CI job and from `bin/affected-specs`; CI runs it separately after generating a `medium` benchmark DB. `bin/hook-rspec` and the affected-specs mapping deliberately skip it.
-- If you change a `lib/` file, `bin/affected-specs` maps it to the relevant spec(s) via `SPEC_OVERRIDES` (not always a 1:1 name match). Changes to `spec_helper.rb`, `spec/support/`, the gemspec, RuboCop/lefthook/sorbet config, or CI workflows trigger the **full** fast suite. When in doubt, run `bundle exec rspec` (or `bin/ci`) before pushing.
+- If you change a `lib/` file, `bin/affected-specs` maps it to the relevant spec(s) via `SPEC_OVERRIDES` (not always a 1:1 name match). Changes to `spec_helper.rb`, `spec/support/`, the gemspec, RuboCop/lefthook config, or CI workflows trigger the **full** fast suite. When in doubt, run `bundle exec rspec` (or `bin/ci`) before pushing.
 
 ## Hard conventions (enforced by hooks/CI)
 
-- **Every `lib/**/*.rb` file must start with `# typed: strict`** (line 1, before `# frozen_string_literal: true`). Enforced by `bin/check-strict-sigils` — no `typed: true`/`typed: false` allowed in `lib/`. This means new methods need full Sorbet `sig`s.
-- Double-quoted strings, `Layout/LineLength` max 120, `Metrics/MethodLength` max 20 (RuboCop config in `.rubocop.yml`). `benchmark/**/*.rb` and `sorbet/**` are excluded from RuboCop.
+- **Type safety without a type checker** (the gem ships no runtime type dependency). Immutable value objects use `Data.define`; the public DSL validates its inputs at the boundary with `raise ArgumentError`; the comprehensive test suite (unit + real-DB matrix) is the behavioral net; public-API types are documented with YARD `@param`/`@return`.
+- Double-quoted strings, `Layout/LineLength` max 120, `Metrics/MethodLength` max 20 (RuboCop config in `.rubocop.yml`). `benchmark/**/*.rb` is excluded from RuboCop.
 - View `materialized_from` sources must be `ActiveRecord::Relation` objects (standard query API + Arel), **never raw SQL strings**.
 
 ## Architecture

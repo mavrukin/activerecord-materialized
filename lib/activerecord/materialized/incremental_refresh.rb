@@ -1,4 +1,3 @@
-# typed: strict
 # frozen_string_literal: true
 
 module ActiveRecord
@@ -9,15 +8,11 @@ module ActiveRecord
     #
     # @api private
     class IncrementalRefresh
-      extend T::Sig
-
-      sig { params(view_class: ViewClass, payload: T::Hash[Symbol, T.untyped]).void }
       def initialize(view_class, payload)
         @view_class = view_class
         @payload = payload
       end
 
-      sig { returns(Integer) }
       def call
         ensure_cache_table!
         store = MaintenanceStore.new(@view_class)
@@ -29,7 +24,6 @@ module ActiveRecord
 
       private
 
-      sig { params(store: MaintenanceStore, pending: T.nilable(MaintenanceStore::Pending)).returns(Integer) }
       def apply!(store, pending)
         if pending.is_a?(SummaryDelta)
           store.clear!
@@ -39,13 +33,11 @@ module ActiveRecord
         IncrementalMaintainer.new(@view_class).maintain!(@view_class.connection, @view_class.table_name)
       end
 
-      sig { params(pending: T.nilable(MaintenanceStore::Pending)).returns(Symbol) }
       def mode(pending)
         pending.is_a?(SummaryDelta) ? :summary_delta : :scoped_recompute
       end
 
       # Partitions this pass recomputes; nil when it widened to a full recompute.
-      sig { params(pending: T.nilable(MaintenanceStore::Pending)).returns(T.nilable(Integer)) }
       def partition_count(pending)
         return pending.tracked_partition_count if pending.is_a?(SummaryDelta)
         return nil unless pending.is_a?(MaintenanceDelta)
@@ -54,7 +46,6 @@ module ActiveRecord
       end
 
       # Cheap DDL so partition maintenance has somewhere to write — never a populate.
-      sig { void }
       def ensure_cache_table!
         return if @view_class.table_exists?
 

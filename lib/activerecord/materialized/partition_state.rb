@@ -1,4 +1,3 @@
-# typed: strict
 # frozen_string_literal: true
 
 module ActiveRecord
@@ -7,16 +6,10 @@ module ActiveRecord
     # a read can decide whether a partition is served from the cache or read
     # through to the source. Warm views are fully materialized and ignore this.
     class PartitionState
-      extend T::Sig
-
-      KeyTuple = T.type_alias { T::Array[T.untyped] }
-
-      sig { params(view_class: ViewClass).void }
       def initialize(view_class)
         @view_class = view_class
       end
 
-      sig { params(key_tuples: T::Array[KeyTuple]).returns(T::Boolean) }
       def all_fresh?(key_tuples)
         return false if key_tuples.empty?
 
@@ -25,7 +18,6 @@ module ActiveRecord
         scope.where(partition_key: serialized).count == serialized.size
       end
 
-      sig { params(key_tuples: T::Array[KeyTuple]).void }
       def mark_fresh!(key_tuples)
         return if key_tuples.empty?
 
@@ -35,7 +27,6 @@ module ActiveRecord
         end
       end
 
-      sig { params(key_tuples: T::Array[KeyTuple]).void }
       def mark_stale!(key_tuples)
         return if key_tuples.empty?
 
@@ -43,7 +34,6 @@ module ActiveRecord
         scope.where(partition_key: key_tuples.map { |tuple| serialize(tuple) }).delete_all
       end
 
-      sig { void }
       def reset!
         ensure_table!
         scope.delete_all
@@ -51,7 +41,6 @@ module ActiveRecord
 
       # The partition key tuples a query touches, or nil unless the conditions are
       # an exact match on the GROUP BY columns (the only case the fast path serves).
-      sig { params(view_class: ViewClass, args: T::Array[T.untyped]).returns(T.nilable(T::Array[KeyTuple])) }
       def self.keys_from(view_class, args)
         conditions = single_hash(args)
         return nil if conditions.nil?
@@ -63,7 +52,6 @@ module ActiveRecord
         value_lists.nil? ? nil : cartesian(value_lists)
       end
 
-      sig { params(args: T::Array[T.untyped]).returns(T.nilable(T::Hash[T.untyped, T.untyped])) }
       def self.single_hash(args)
         return nil unless args.length == 1
 
@@ -71,10 +59,6 @@ module ActiveRecord
         conditions.is_a?(Hash) ? conditions : nil
       end
 
-      sig do
-        params(conditions: T::Hash[T.untyped, T.untyped], group_keys: T::Array[String])
-          .returns(T.nilable(T::Array[T::Array[String]]))
-      end
       def self.key_value_lists(conditions, group_keys)
         normalized = conditions.transform_keys(&:to_s)
         return nil unless normalized.keys.sort == group_keys.sort
@@ -82,7 +66,6 @@ module ActiveRecord
         group_keys.map { |column| Array(normalized.fetch(column)).map(&:to_s) }
       end
 
-      sig { params(value_lists: T::Array[T::Array[String]]).returns(T.nilable(T::Array[KeyTuple])) }
       def self.cartesian(value_lists)
         return nil if value_lists.any?(&:empty?)
 
@@ -93,22 +76,18 @@ module ActiveRecord
 
       private
 
-      sig { returns(String) }
       def view_key
         @view_class.view_key
       end
 
-      sig { params(key_tuple: KeyTuple).returns(String) }
       def serialize(key_tuple)
         key_tuple.map(&:to_s).to_json
       end
 
-      sig { returns(::ActiveRecord::Relation) }
       def scope
         PartitionRecord.where(view_name: view_key)
       end
 
-      sig { void }
       def ensure_table!
         connection = @view_class.connection
         return if PartitionRecord.table_exists?

@@ -1,4 +1,3 @@
-# typed: strict
 # frozen_string_literal: true
 
 require "digest"
@@ -20,13 +19,8 @@ module ActiveRecord
     #
     # @api private
     class PartitionSnapshot
-      extend T::Sig
-
       SEPARATOR = "\x1f" # ASCII unit separator between digested values
 
-      sig do
-        params(model: ViewClass, key_columns: T::Array[String], value_columns: T::Array[String], mode: Symbol).void
-      end
       def initialize(model, key_columns, value_columns, mode)
         @model = model
         @key_columns = key_columns
@@ -34,7 +28,6 @@ module ActiveRecord
         @mode = mode
       end
 
-      sig { params(relation: ::ActiveRecord::Relation).returns(T::Hash[T::Array[T.untyped], T.untyped]) }
       def of(relation)
         relation.to_a
                 .group_by { |record| key_tuple(record) }
@@ -43,12 +36,10 @@ module ActiveRecord
 
       private
 
-      sig { params(record: T.untyped).returns(T::Array[T.untyped]) }
       def key_tuple(record)
         @key_columns.map { |column| cast(column, record[column]) }
       end
 
-      sig { params(record: T.untyped).returns(T.untyped) }
       def value_signature(record)
         return nil if @mode == :row_count
 
@@ -58,7 +49,6 @@ module ActiveRecord
 
       # Cast through the cache model's declared type so the cache value and the source
       # recompute (read through a different type system) normalize identically.
-      sig { params(column: String, value: T.untyped).returns(T.untyped) }
       def cast(column, value)
         @model.type_for_attribute(column).cast(value)
       end

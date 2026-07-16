@@ -1,4 +1,3 @@
-# typed: strict
 # frozen_string_literal: true
 
 module ActiveRecord
@@ -7,28 +6,22 @@ module ActiveRecord
     # re-reading base rows: new partitions inserted, existing ones incremented in
     # place (NULL-safe for SUM), and emptied partitions deleted.
     class DeltaMaintainer
-      extend T::Sig
-
-      sig { params(view_class: ViewClass).void }
       def initialize(view_class)
         @view_class = view_class
-        @analysis = T.let(AggregateAnalysis.new(view_class.resolved_source), AggregateAnalysis)
+        @analysis = AggregateAnalysis.new(view_class.resolved_source)
       end
 
-      sig { params(summary: SummaryDelta).returns(Integer) }
       def apply!(summary)
         summary.buckets.each { |key_tuple, column_deltas| apply_partition(key_tuple, column_deltas) }
-        T.unsafe(@view_class).unscoped.count
+        @view_class.unscoped.count
       end
 
       private
 
-      sig { returns(T::Array[String]) }
       def group_columns
         @view_class.maintenance_key_columns
       end
 
-      sig { params(key_tuple: SummaryDelta::KeyTuple, column_deltas: T::Hash[String, Numeric]).void }
       def apply_partition(key_tuple, column_deltas)
         existing = partition_scope(key_tuple).first
         if existing.nil?
@@ -40,28 +33,24 @@ module ActiveRecord
         end
       end
 
-      sig { params(key_tuple: SummaryDelta::KeyTuple).returns(::ActiveRecord::Relation) }
       def partition_scope(key_tuple)
-        T.unsafe(@view_class).unscoped.where(group_columns.zip(key_tuple).to_h)
+        @view_class.unscoped.where(group_columns.zip(key_tuple).to_h)
       end
 
-      sig { params(key_tuple: SummaryDelta::KeyTuple, column_deltas: T::Hash[String, Numeric]).void }
       def insert_partition(key_tuple, column_deltas)
         # A new partition's deltas are its absolute values; aggregates with no
         # delta default to 0, not NULL, since the partition has rows.
         defaults = @analysis.aggregate_columns.to_h { |column| [column.name, 0] }
         row = group_columns.zip(key_tuple).to_h.merge(defaults).merge(column_deltas)
-        T.unsafe(@view_class).create!(row)
+        @view_class.create!(row)
       end
 
       # Adds each delta to the current value, treating a NULL SUM as zero.
-      sig { params(existing: T.untyped, column_deltas: T::Hash[String, Numeric]).void }
       def add_deltas!(existing, column_deltas)
         new_values = column_deltas.to_h { |column, amount| [column, (existing[column] || 0) + amount] }
         existing.update!(new_values)
       end
 
-      sig { params(existing: T.untyped, column_deltas: T::Hash[String, Numeric]).returns(T::Boolean) }
       def emptied?(existing, column_deltas)
         column = @analysis.row_count_column
         return false if column.nil?

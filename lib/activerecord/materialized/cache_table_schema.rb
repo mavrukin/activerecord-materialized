@@ -1,4 +1,3 @@
-# typed: strict
 # frozen_string_literal: true
 
 module ActiveRecord
@@ -9,27 +8,18 @@ module ActiveRecord
     #
     # @api private
     module CacheTableSchema
-      extend T::Sig
-
       # An inferred cache-table column: name from the relation projection, a create_table
       # column type, and — for a :decimal — the precision/scale that preserve value
       # fidelity (a bare `decimal` is DECIMAL(10,0) on MySQL, which truncates).
-      class ColumnDefinition < T::Struct
-        extend T::Sig
-
-        const :name, String
-        const :type, Symbol
-        const :precision, T.nilable(Integer), default: nil
-        const :scale, T.nilable(Integer), default: nil
+      ColumnDefinition = Data.define(:name, :type, :precision, :scale) do
+        def initialize(name:, type:, precision: nil, scale: nil) = super
 
         # create_table options for this column (precision/scale for a decimal; none otherwise).
-        sig { returns(T::Hash[Symbol, Integer]) }
         def options
           { precision: precision, scale: scale }.compact
         end
 
         # The trailing arguments for a `t.<type> :<name>` migration line ("" when none).
-        sig { returns(String) }
         def migration_arguments
           options.map { |key, value| ", #{key}: #{value}" }.join
         end
@@ -37,7 +27,6 @@ module ActiveRecord
 
       module_function
 
-      sig { params(view_class: T.class_of(::ActiveRecord::Base), relation: ::ActiveRecord::Relation).void }
       def ensure_table!(view_class, relation)
         return if view_class.table_exists?
 
@@ -45,7 +34,6 @@ module ActiveRecord
         view_class.reset_column_information
       end
 
-      sig { params(view_class: T.class_of(::ActiveRecord::Base), table_name: String, relation: ::ActiveRecord::Relation).void }
       def create_table!(view_class, table_name, relation)
         build_table!(view_class.connection, table_name, relation)
       end
@@ -54,20 +42,18 @@ module ActiveRecord
       # a zero-row probe); each column's type is inferred structurally from its projected
       # node by ColumnTypeInference. Shared by table creation, migration generation, and
       # drift checks.
-      sig { params(connection: Connection, relation: ::ActiveRecord::Relation).returns(T::Array[ColumnDefinition]) }
       def column_definitions(connection, relation)
-        nodes = T.unsafe(relation).select_values
+        nodes = relation.select_values
         connection.exec_query(relation.limit(0).to_sql).columns.each_with_index.map do |name, index|
           ColumnTypeInference.definition_for(connection, relation, nodes[index], name)
         end
       end
 
-      sig { params(connection: Connection, table_name: String, relation: ::ActiveRecord::Relation).void }
       def build_table!(connection, table_name, relation)
         definitions = column_definitions(connection, relation)
         connection.create_table(table_name) do |table|
           definitions.each do |definition|
-            T.unsafe(table).public_send(definition.type, definition.name, **definition.options)
+            table.public_send(definition.type, definition.name, **definition.options)
           end
         end
       end

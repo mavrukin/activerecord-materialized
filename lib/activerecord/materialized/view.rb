@@ -1,4 +1,3 @@
-# typed: strict
 # frozen_string_literal: true
 
 module ActiveRecord
@@ -36,7 +35,6 @@ module ActiveRecord
     # @see ViewIncrementalClassMethods::ClassMethods incremental-maintenance configuration
     # @see ViewQueryAccessClassMethods::ClassMethods +rebuild!+, +refresh!+, +materialized?+, …
     class View < ::ActiveRecord::Base
-      extend T::Sig
       include RefreshCallbacks
       include ViewConfigurationClassMethods
       include ViewQueryAccessClassMethods
@@ -44,34 +42,25 @@ module ActiveRecord
       self.abstract_class = true
 
       class << self
-        extend T::Sig
+        @source_definition = nil
+        @max_staleness_setting = nil
+        @dependency_tables = nil
+        @refresh_strategy = nil
+        @refresh_debounce = nil
+        @refresh_mode = nil
+        @incremental_source_definition = nil
+        @incremental_key_columns = nil
+        @table_name = nil
 
-        @source_definition = T.let(nil, T.nilable(SourceDefinition))
-        @max_staleness_setting = T.let(nil, T.nilable(T.any(StalenessDuration, Proc)))
-        @dependency_tables = T.let(nil, T.nilable(T::Array[String]))
-        @refresh_strategy = T.let(nil, T.nilable(Symbol))
-        @refresh_debounce = T.let(nil, T.nilable(DebounceInterval))
-        @refresh_mode = T.let(nil, T.nilable(RefreshMode))
-        @incremental_source_definition = T.let(nil, T.nilable(SourceDefinition))
-        @incremental_key_columns = T.let(nil, T.nilable(T::Array[String]))
-        @table_name = T.let(nil, T.nilable(String))
+        attr_reader :source_definition, :max_staleness_setting
 
-        sig { returns(T.nilable(SourceDefinition)) }
-        attr_reader :source_definition
-
-        sig { returns(T.nilable(T.any(StalenessDuration, Proc))) }
-        attr_reader :max_staleness_setting
-
-        sig { returns(T::Array[String]) }
         def dependency_tables
-          tables = T.let(T.unsafe(self).instance_variable_get(:@dependency_tables), T.nilable(T::Array[String]))
+          tables = instance_variable_get(:@dependency_tables)
           tables.nil? ? [] : tables
         end
       end
 
-      sig { returns(T::Boolean) }
       def stale?
-        T.bind(self, View)
         self.class.stale?
       end
     end

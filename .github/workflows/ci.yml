@@ -33,21 +33,6 @@ jobs:
       - name: Run RuboCop
         run: bundle exec rubocop lib/ bin/ --parallel
 
-  typecheck:
-    name: Sorbet
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: ${{ env.RUBY_VERSION }}
-          bundler-cache: true
-
-      - name: Typecheck with Sorbet
-        run: bundle exec srb tc
-
   test:
     name: RSpec
     runs-on: ubuntu-latest

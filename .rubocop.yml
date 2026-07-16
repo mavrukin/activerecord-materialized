@@ -2,34 +2,17 @@ plugins:
   - rubocop-performance
   - rubocop-rails
   - rubocop-rspec
-  - rubocop-sorbet
 
 AllCops:
   NewCops: enable
   TargetRubyVersion: 3.4
   SuggestExtensions: false
   Exclude:
-    - "sorbet/**/*"
     - "vendor/**/*"
     - "tmp/**/*"
     - "benchmark/fixtures/**/*"
     - "benchmark/**/*.rb"
     - "demo/**/*"
-
-Sorbet/TrueSigil:
-  Enabled: true
-  Include:
-    - "lib/**/*.rb"
-
-Sorbet/FalseSigil:
-  Enabled: true
-  Include:
-    - "lib/**/*.rb"
-
-Sorbet/StrictSigil:
-  Enabled: true
-  Include:
-    - "lib/**/*.rb"
 
 Style/Documentation:
   Enabled: false
@@ -44,9 +27,6 @@ Rails/ApplicationJob:
   Enabled: false
 
 Rails/Delegate:
-  Enabled: false
-
-Sorbet/ObsoleteStrictMemoization:
   Enabled: false
 
 Naming/BlockForwarding:

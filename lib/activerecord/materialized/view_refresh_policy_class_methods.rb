@@ -1,4 +1,3 @@
-# typed: strict
 # frozen_string_literal: true
 
 module ActiveRecord
@@ -6,41 +5,30 @@ module ActiveRecord
     # Refresh-policy DSL mixed into a {View}: `refresh_on_change`, `refresh_debounce`, `cold_read`,
     # `warm_up`, `max_staleness`, plus `warm_up!`.
     module ViewRefreshPolicyClassMethods
-      extend T::Sig
-      extend T::Helpers
-
-      sig { params(base: T.class_of(View)).void }
       def self.included(base)
         base.extend(ClassMethods)
       end
 
       # The refresh-policy DSL methods available on a {View} subclass.
       module ClassMethods
-        extend T::Sig
-
-        sig { returns(T.class_of(View)) }
         def view_class
-          T.cast(self, T.class_of(View))
+          self
         end
 
-        sig { params(strategy: Symbol).void }
         def refresh_on_change(strategy = :async)
-          @refresh_strategy = T.let(strategy.to_sym, T.nilable(Symbol))
+          @refresh_strategy = strategy.to_sym
         end
 
-        sig { params(seconds: DebounceInterval).void }
         def refresh_debounce(seconds)
-          @refresh_debounce = T.let(seconds, T.nilable(DebounceInterval))
+          @refresh_debounce = seconds
         end
 
-        sig { params(strategy: Symbol).void }
         def cold_read(strategy)
-          @cold_read_strategy = T.let(strategy.to_sym, T.nilable(Symbol))
+          @cold_read_strategy = strategy.to_sym
         end
 
-        sig { returns(Symbol) }
         def resolved_cold_read_strategy
-          T.let(@cold_read_strategy, T.nilable(Symbol)) ||
+          @cold_read_strategy ||
             ActiveRecord::Materialized.configuration.default_cold_read_strategy
         end
 
@@ -52,47 +40,40 @@ module ActiveRecord
         # Setting +:callbacks+ (re)installs callbacks for any dependencies already
         # declared, so it works regardless of whether it precedes or follows
         # +depends_on+ — important when the global default is +:none+.
-        sig { params(source: Symbol).void }
         def change_source(source)
-          @change_source = T.let(ChangeSource.cast(source), T.nilable(Symbol))
+          @change_source = ChangeSource.cast(source)
           DependencyRegistry.install_callbacks_for(view_class) if @change_source == ChangeSource::CALLBACKS
         end
 
-        sig { returns(Symbol) }
         def resolved_change_source
-          T.let(@change_source, T.nilable(Symbol)) ||
+          @change_source ||
             ActiveRecord::Materialized.configuration.default_change_source
         end
 
         # Queries warm_up! runs to materialize a cold view's hot partitions, e.g.:
         #   warm_up { [where(region: "us"), order(revenue: :desc).limit(50)] }
-        sig { params(block: T.proc.returns(T.untyped)).void }
         def warm_up(&block)
-          @warm_up_definition = T.let(block, T.nilable(Proc))
+          @warm_up_definition = block
         end
 
-        sig { returns(T::Array[::ActiveRecord::Relation]) }
         def resolved_warm_up_queries
-          block = T.let(@warm_up_definition, T.nilable(Proc))
+          block = @warm_up_definition
           return [] if block.nil?
 
-          Kernel.Array(T.unsafe(view_class).instance_eval(&block))
+          Kernel.Array(view_class.instance_eval(&block))
         end
 
         # Running each warm_up query enqueues scoped maintenance for the
         # partitions it touches; refresh! then applies it.
-        sig { returns(T.nilable(RefreshResult)) }
         def warm_up!
           resolved_warm_up_queries.each(&:to_a)
           view_class.refresh!
         end
 
-        sig { returns(Symbol) }
         def resolved_refresh_strategy
           @refresh_strategy || ActiveRecord::Materialized.configuration.default_refresh_strategy
         end
 
-        sig { returns(T.any(Integer, Float)) }
         def resolved_refresh_debounce
           interval = if @refresh_debounce.nil?
                        ActiveRecord::Materialized.configuration.default_refresh_debounce
@@ -102,28 +83,19 @@ module ActiveRecord
           interval.respond_to?(:to_f) ? interval.to_f : interval.to_i
         end
 
-        sig do
-          params(
-            duration: T.nilable(StalenessDuration),
-            block: T.nilable(T.proc.returns(StalenessDuration))
-          ).void
-        end
         def max_staleness(duration = nil, &block)
-          @max_staleness_setting = T.let(duration || block, T.nilable(T.any(StalenessDuration, Proc)))
+          @max_staleness_setting = duration || block
         end
 
-        sig { returns(T.nilable(StalenessDuration)) }
         def resolved_max_staleness
           setting = @max_staleness_setting
           default = ActiveRecord::Materialized.configuration.default_max_staleness
-          return T.cast(default, T.nilable(StalenessDuration)) if setting.nil?
-          return T.unsafe(view_class).instance_eval(&setting) if setting.is_a?(Proc)
+          return default if setting.nil?
+          return view_class.instance_eval(&setting) if setting.is_a?(Proc)
 
           setting
         end
       end
-
-      mixes_in_class_methods ClassMethods
     end
   end
 end

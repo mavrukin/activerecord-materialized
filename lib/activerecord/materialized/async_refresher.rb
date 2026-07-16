@@ -1,4 +1,3 @@
-# typed: strict
 # frozen_string_literal: true
 
 module ActiveRecord
@@ -8,9 +7,6 @@ module ActiveRecord
     # @api private
     class AsyncRefresher
       class << self
-        extend T::Sig
-
-        sig { params(view_class: ViewClass).void }
         def enqueue(view_class)
           interval = view_class.resolved_refresh_debounce
 
@@ -20,7 +16,6 @@ module ActiveRecord
           end
         end
 
-        sig { void }
         def flush!
           mutex.synchronize do
             cancel_timer_unlocked
@@ -28,12 +23,10 @@ module ActiveRecord
           end
         end
 
-        sig { returns(Integer) }
         def pending_count
           mutex.synchronize { pending.size }
         end
 
-        sig { void }
         def reset!
           mutex.synchronize do
             cancel_timer_unlocked
@@ -43,44 +36,32 @@ module ActiveRecord
 
         # When paused, refreshes accumulate and run only on an explicit flush! —
         # no background timer fires.
-        sig { params(value: T::Boolean).void }
-        def paused=(value)
-          @paused = T.let(value, T.nilable(T::Boolean))
-        end
+        attr_writer :paused
 
-        sig { returns(T::Boolean) }
         def paused?
-          @paused = T.let(@paused, T.nilable(T::Boolean))
           @paused || false
         end
 
         private
 
-        sig { returns(T::Hash[String, ViewClass]) }
         def pending
-          @pending ||= T.let({}, T.nilable(T::Hash[String, ViewClass]))
+          @pending ||= {}
         end
 
-        sig { returns(Mutex) }
         def mutex
-          @mutex ||= T.let(Mutex.new, T.nilable(Mutex))
+          @mutex ||= Mutex.new
         end
 
-        sig { params(interval: T.any(Integer, Float)).void }
         def schedule_unlocked(interval)
           cancel_timer_unlocked
           return if paused?
 
-          @timer_thread = T.let(
-            Thread.new do
-              sleep(interval) unless interval.zero?
-              mutex.synchronize { drain_pending_unlocked }
-            end,
-            T.nilable(Thread)
-          )
+          @timer_thread = Thread.new do
+            sleep(interval) unless interval.zero?
+            mutex.synchronize { drain_pending_unlocked }
+          end
         end
 
-        sig { void }
         def cancel_timer_unlocked
           return unless @timer_thread&.alive?
 
@@ -88,7 +69,6 @@ module ActiveRecord
           @timer_thread = nil
         end
 
-        sig { void }
         def drain_pending_unlocked
           views = pending.values
           pending.clear

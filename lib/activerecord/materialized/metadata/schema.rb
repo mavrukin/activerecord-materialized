@@ -1,4 +1,3 @@
-# typed: strict
 # frozen_string_literal: true
 
 module ActiveRecord
@@ -8,11 +7,8 @@ module ActiveRecord
       #
       # @api private
       module Schema
-        extend T::Sig
-
         module_function
 
-        sig { params(view_class: ViewClass).void }
         def ensure_table!(view_class)
           connection = view_class.connection
           create_metadata_table!(connection) unless MetadataRecord.table_exists?
@@ -20,7 +16,6 @@ module ActiveRecord
           MetadataRecord.reset_column_information
         end
 
-        sig { params(connection: Connection).void }
         def create_metadata_table!(connection)
           connection.create_table(::ActiveRecord::Materialized.metadata_table_name, force: :cascade) do |t|
             t.string :view_name, null: false
@@ -41,7 +36,6 @@ module ActiveRecord
 
         # Lazily add columns introduced after a table was first provisioned, so an app
         # migrated from an earlier version picks them up without a new migration.
-        sig { params(connection: Connection).void }
         def ensure_columns!(connection)
           return unless MetadataRecord.table_exists?
 
@@ -52,7 +46,6 @@ module ActiveRecord
           ensure_column!(connection, :reconciled_partition_count, :integer)
         end
 
-        sig { params(connection: Connection, name: Symbol, type: Symbol, default: T.untyped, null: T::Boolean).void }
         def ensure_column!(connection, name, type, default: nil, null: true)
           return if MetadataRecord.column_names.include?(name.to_s)
 

@@ -10,7 +10,7 @@ FAST_SPEC_GLOBS = [
   File.join(FAST_SPEC_DIR, "metadata", "*_spec.rb")
 ].freeze
 ALL_FAST_SPECS = FAST_SPEC_GLOBS.flat_map { |glob| Dir[glob] }.reject { |path| path == HEAVY_SPEC }.sort.freeze
-INFRA_TRIGGER = %r{\A(?:Gemfile|activerecord-materialized\.gemspec|\.rubocop|lefthook|sorbet|\.github/workflows)}
+INFRA_TRIGGER = %r{\A(?:Gemfile|activerecord-materialized\.gemspec|\.rubocop|lefthook|\.github/workflows)}
 
 # Non-obvious lib file → spec mappings. :all runs the full fast suite.
 SPEC_OVERRIDES = {

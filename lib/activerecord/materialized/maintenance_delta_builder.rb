@@ -1,4 +1,3 @@
-# typed: strict
 # frozen_string_literal: true
 
 module ActiveRecord
@@ -7,22 +6,12 @@ module ActiveRecord
     #
     # @api private
     class MaintenanceDeltaBuilder
-      extend T::Sig
-
-      sig do
-        params(
-          change: WriteChange,
-          key_columns: T::Array[String],
-          resolver: T.nilable(ViewIncrementalClassMethods::PartitionKeyResolver)
-        ).void
-      end
       def initialize(change, key_columns, resolver: nil)
         @change = change
         @key_columns = key_columns
         @resolver = resolver
       end
 
-      sig { returns(MaintenanceDelta) }
       def build
         return MaintenanceDelta.full_partition if @key_columns.empty?
 
@@ -36,7 +25,6 @@ module ActiveRecord
 
       private
 
-      sig { returns(T::Array[T::Array[T.untyped]]) }
       def extract_tuples
         snapshots = case @change.operation.to_sym
                     when :create then [@change.after]
@@ -49,7 +37,6 @@ module ActiveRecord
 
       # Partition key tuple(s) from the configured resolver, or [] (=> full
       # recompute) when none is set or it yields nothing.
-      sig { returns(T::Array[T::Array[T.untyped]]) }
       def resolved_tuples
         resolver = @resolver
         return [] if resolver.nil?
@@ -61,7 +48,6 @@ module ActiveRecord
       # arity to tell a single composite tuple from a list of tuples. A nil/empty
       # return widens (=> full recompute); a returned nil value is a real key (the
       # NULL partition), so it is kept rather than dropped.
-      sig { params(result: T.untyped).returns(T::Array[T::Array[T.untyped]]) }
       def normalize_keys(result)
         return [] if result.nil?
 
@@ -70,33 +56,29 @@ module ActiveRecord
 
       # A composite key expects a tuple or an array of tuples; anything else (a bare
       # scalar, nil, empty) can't be scoped, so it widens rather than crashing.
-      sig { params(result: T.untyped).returns(T::Array[T::Array[T.untyped]]) }
       def composite_tuples(result)
         return [] unless result.is_a?(Array) && result.any?
 
         result.first.is_a?(Array) ? result : [result]
       end
 
-      sig { params(attributes: T::Hash[String, T.untyped]).returns(T::Boolean) }
       def keys_present?(attributes)
         @key_columns.all? do |column|
-          attributes.key?(column) || T.unsafe(attributes).key?(column.to_sym)
+          attributes.key?(column) || attributes.key?(column.to_sym)
         end
       end
 
-      sig { params(attributes: T::Hash[String, T.untyped]).returns(T.nilable(T::Array[T.untyped])) }
       def key_tuple(attributes)
         return nil unless keys_present?(attributes)
 
         @key_columns.map { |column| attribute_value(attributes, column) }
       end
 
-      sig { params(attributes: T::Hash[String, T.untyped], column: String).returns(T.untyped) }
       def attribute_value(attributes, column)
         # Look up by presence so falsey group-key values map to their partition.
         return attributes[column] if attributes.key?(column)
 
-        T.unsafe(attributes)[column.to_sym]
+        attributes[column.to_sym]
       end
     end
   end

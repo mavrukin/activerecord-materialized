@@ -1,4 +1,3 @@
-# typed: strict
 # frozen_string_literal: true
 
 require "rails/generators"
@@ -12,17 +11,14 @@ module ActiverecordMaterialized
   #
   # Run after the view's `materialized_from` is defined, then `db:migrate`.
   class MigrationGenerator < ::Rails::Generators::NamedBase
-    extend T::Sig
     include ::Rails::Generators::Migration
 
     source_root File.expand_path("templates", __dir__)
 
-    sig { params(dirname: String).returns(String) }
     def self.next_migration_number(dirname)
-      ::ActiveRecord::Migration.next_migration_number(T.unsafe(self).current_migration_number(dirname) + 1)
+      ::ActiveRecord::Migration.next_migration_number(current_migration_number(dirname) + 1)
     end
 
-    sig { void }
     def create_migration_file
       migration_template "materialized_view_migration.rb.erb",
                          File.join("db", "migrate", "create_#{builder.table_name}.rb")
@@ -30,15 +26,13 @@ module ActiverecordMaterialized
 
     private
 
-    sig { returns(::ActiveRecord::Materialized::MigrationBuilder) }
     def builder
-      @builder ||= T.let(build_builder, T.nilable(::ActiveRecord::Materialized::MigrationBuilder))
+      @builder ||= build_builder
     end
 
     # Resolve via the registry (after eager-load) rather than constantize.
-    sig { returns(::ActiveRecord::Materialized::MigrationBuilder) }
     def build_builder
-      T.unsafe(::Rails).application.eager_load!
+      ::Rails.application.eager_load!
       view_class = ::ActiveRecord::Materialized::Registry.for_class_name(class_name)
       if view_class.nil?
         Kernel.raise ::Thor::Error,
