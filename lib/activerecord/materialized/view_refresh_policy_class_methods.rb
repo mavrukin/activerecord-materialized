@@ -35,6 +35,10 @@ module ActiveRecord
         # @param seconds [Numeric, ActiveSupport::Duration] the debounce interval
         # @return [void]
         def refresh_debounce(seconds)
+          unless seconds.is_a?(Numeric) || seconds.is_a?(::ActiveSupport::Duration)
+            raise ArgumentError, "refresh_debounce expects seconds (a number or Duration), got #{seconds.inspect}"
+          end
+
           @refresh_debounce = seconds
         end
 
@@ -111,11 +115,17 @@ module ActiveRecord
         # Sets the maximum staleness window before the view is treated as stale — a static
         # duration, or a block evaluated in the view's context for a dynamic window.
         #
-        # @param duration [Numeric, ActiveSupport::Duration, nil] a static staleness window
-        # @yieldreturn [Numeric, ActiveSupport::Duration] a dynamically computed staleness window
+        # @param duration [Integer, ActiveSupport::Duration, nil] a static staleness window (seconds)
+        # @yieldreturn [Integer, ActiveSupport::Duration] a dynamically computed staleness window
         # @return [void]
         def max_staleness(duration = nil, &block)
-          @max_staleness_setting = duration || block
+          setting = duration || block
+          unless setting.nil? || [Integer, ::ActiveSupport::Duration, Proc].any? { |type| setting.is_a?(type) }
+            raise ArgumentError,
+                  "max_staleness expects an Integer (seconds), a Duration, or a block, got #{duration.inspect}"
+          end
+
+          @max_staleness_setting = setting
         end
 
         def resolved_max_staleness

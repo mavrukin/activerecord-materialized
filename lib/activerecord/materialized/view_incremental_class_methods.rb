@@ -5,7 +5,8 @@ module ActiveRecord
     # Incremental-maintenance DSL mixed into a {View}: `refresh_mode`, `incremental_keys`,
     # `incremental_from`, and the per-write maintenance entry points.
     module ViewIncrementalClassMethods
-      # Maps a dependency-table write to the partition key(s) it affects.
+      # The maintenance modes a view may declare (validated fail-fast by refresh_mode).
+      REFRESH_MODES = %i[incremental full].freeze
 
       def self.included(base)
         base.extend(ClassMethods)
@@ -22,7 +23,12 @@ module ActiveRecord
         # @param mode [Symbol] +:incremental+ (default) or +:full+
         # @return [void]
         def refresh_mode(mode)
-          instance_variable_set(:@refresh_mode, mode.to_sym)
+          mode = mode.to_sym
+          unless REFRESH_MODES.include?(mode)
+            raise ArgumentError, "unknown refresh mode #{mode.inspect}; expected one of #{REFRESH_MODES.inspect}"
+          end
+
+          instance_variable_set(:@refresh_mode, mode)
         end
 
         # Overrides the source relation used for incremental maintenance (defaults to +materialized_from+).

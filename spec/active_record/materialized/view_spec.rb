@@ -80,4 +80,22 @@ RSpec.describe ActiveRecord::Materialized::View do
       expect { plain.warm_up! }.not_to raise_error
     end
   end
+
+  describe "configuration validation" do
+    # fail-fast: a bad config value raises where it is declared, not silently or downstream
+    it "rejects a non-numeric refresh_debounce" do
+      expect { define_view("mv_bad_debounce", :item_count_by_category) { refresh_debounce("fast") } }
+        .to raise_error(ArgumentError, /refresh_debounce expects/)
+    end
+
+    it "rejects a non-duration max_staleness" do
+      expect { define_view("mv_bad_staleness", :item_count_by_category) { max_staleness("1 hour") } }
+        .to raise_error(ArgumentError, /max_staleness expects/)
+    end
+
+    it "rejects an unknown refresh_mode" do
+      expect { define_view("mv_bad_mode", :item_count_by_category) { refresh_mode(:incrementl) } }
+        .to raise_error(ArgumentError, /unknown refresh mode/)
+    end
+  end
 end
