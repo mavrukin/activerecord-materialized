@@ -17,14 +17,26 @@ module ActiveRecord
           self
         end
 
+        # Sets whether maintenance is incremental (default) or a full recompute on every change.
+        #
+        # @param mode [Symbol] +:incremental+ (default) or +:full+
+        # @return [void]
         def refresh_mode(mode)
           instance_variable_set(:@refresh_mode, mode.to_sym)
         end
 
+        # Overrides the source relation used for incremental maintenance (defaults to +materialized_from+).
+        #
+        # @yieldreturn [ActiveRecord::Relation] the relation to maintain incrementally
+        # @return [void]
         def incremental_from(&block)
           @incremental_source_definition = block
         end
 
+        # Declares the explicit GROUP BY key columns used to scope incremental maintenance.
+        #
+        # @param columns [Array<Symbol>] the key columns identifying a partition
+        # @return [void]
         def incremental_keys(*columns)
           @incremental_key_columns = columns.map(&:to_s)
         end
@@ -35,6 +47,11 @@ module ActiveRecord
         # the key value(s): a scalar (or array of scalars) for a single-column key, a
         # tuple (or array of tuples) for a composite key; returning nothing falls back
         # to a full recompute. Trades a small lookup per write for avoiding one.
+        #
+        # @param table [Symbol, String] the dependency table the resolver applies to
+        # @yieldparam change [WriteChange] the committed write on +table+
+        # @yieldreturn [Object, Array, nil] the affected partition key(s), or +nil+ to force a full recompute
+        # @return [void]
         def partition_key_for(table, &block)
           partition_key_resolvers[table.to_s] = block
         end

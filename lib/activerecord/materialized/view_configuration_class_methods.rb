@@ -39,11 +39,19 @@ module ActiveRecord
           table.presence || "anonymous_view_#{view_class.object_id}"
         end
 
+        # Declares the source relation this view materializes and registers the view unless it is abstract.
+        #
+        # @yieldreturn [ActiveRecord::Relation] the query whose result set is cached in the view's table
+        # @return [void]
         def materialized_from(&block)
           @source_definition = block
           Registry.register(view_class) unless view_class.abstract_class?
         end
 
+        # Declares the dependency tables whose committed writes trigger maintenance of this view.
+        #
+        # @param tables [Array<Symbol, String, Class<ActiveRecord::Base>>] dependency tables this view reads from
+        # @return [void]
         def depends_on(*tables)
           DependencyRegistry.register(view_class, tables)
         end

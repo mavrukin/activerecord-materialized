@@ -15,6 +15,11 @@ module ActiveRecord
           self
         end
 
+        # Sets the strategy used to refresh the view when a dependency changes.
+        #
+        # @param strategy [Symbol] one of +:async+ (default), +:immediate+, or +:manual+
+        # @raise [ArgumentError] if +strategy+ is not a known refresh strategy
+        # @return [void]
         def refresh_on_change(strategy = :async)
           strategy = strategy.to_sym
           unless RefreshScheduler::STRATEGIES.include?(strategy)
@@ -25,10 +30,18 @@ module ActiveRecord
           @refresh_strategy = strategy
         end
 
+        # Sets how long successive async refreshes are coalesced before one runs.
+        #
+        # @param seconds [Numeric, ActiveSupport::Duration] the debounce interval
+        # @return [void]
         def refresh_debounce(seconds)
           @refresh_debounce = seconds
         end
 
+        # Sets how reads are served before the view has been materialized.
+        #
+        # @param strategy [Symbol] one of +:read_through+ (default), +:serve_stale+, or +:raise+
+        # @return [void]
         def cold_read(strategy)
           @cold_read_strategy = strategy.to_sym
         end
@@ -46,6 +59,9 @@ module ActiveRecord
         # Setting +:callbacks+ (re)installs callbacks for any dependencies already
         # declared, so it works regardless of whether it precedes or follows
         # +depends_on+ — important when the global default is +:none+.
+        #
+        # @param source [Symbol] +:callbacks+ or +:none+
+        # @return [void]
         def change_source(source)
           @change_source = ChangeSource.cast(source)
           DependencyRegistry.install_callbacks_for(view_class) if @change_source == ChangeSource::CALLBACKS
@@ -58,6 +74,9 @@ module ActiveRecord
 
         # Queries warm_up! runs to materialize a cold view's hot partitions, e.g.:
         #   warm_up { [where(region: "us"), order(revenue: :desc).limit(50)] }
+        #
+        # @yieldreturn [Array<ActiveRecord::Relation>] the relations whose partitions to warm
+        # @return [void]
         def warm_up(&block)
           @warm_up_definition = block
         end
@@ -89,6 +108,12 @@ module ActiveRecord
           interval.respond_to?(:to_f) ? interval.to_f : interval.to_i
         end
 
+        # Sets the maximum staleness window before the view is treated as stale — a static
+        # duration, or a block evaluated in the view's context for a dynamic window.
+        #
+        # @param duration [Numeric, ActiveSupport::Duration, nil] a static staleness window
+        # @yieldreturn [Numeric, ActiveSupport::Duration] a dynamically computed staleness window
+        # @return [void]
         def max_staleness(duration = nil, &block)
           @max_staleness_setting = duration || block
         end
