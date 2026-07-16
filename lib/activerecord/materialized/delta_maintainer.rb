@@ -13,7 +13,7 @@ module ActiveRecord
 
       def apply!(summary)
         summary.buckets.each { |key_tuple, column_deltas| apply_partition(key_tuple, column_deltas) }
-        @view_class.unscoped.count
+        summary.buckets.size # partitions applied; row-count reporting is the caller's job, outside the lock
       end
 
       private

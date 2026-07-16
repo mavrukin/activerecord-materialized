@@ -55,6 +55,28 @@ RSpec.describe ActiveRecord::Materialized::Refresher do
       expect(view_class.find_by(category: "books").total_amount).to eq(115)
     end
 
+    # #75 — a no-op cycle must not clobber row_count. When cross-process cycles race, the loser
+    # reads a pending summary delta but finds it already consumed under the lock; it must still
+    # report the cache's true total, not 0 (which run_cycle would persist over a populated view).
+    it "reports the cache's true row count when a concurrent winner already consumed the delta" do
+      described_class.new(view_class).rebuild! # row_count => 2 (books, games)
+      item = Item.create!(category: "books", amount: 100)
+      view_class.record_write_change!(write_change(item, :create)) # pending summary delta
+
+      store = ActiveRecord::Materialized::MaintenanceStore.new(view_class)
+      delta = store.pending
+      # A concurrent winner consumes+applies the delta, emptying the payload...
+      store.with_consumed_summary_delta { |d| ActiveRecord::Materialized::DeltaMaintainer.new(view_class).apply!(d) }
+      # ...but this cycle read `pending` before that clear, so it still takes the summary-delta branch.
+      allow(store).to receive(:pending).and_return(delta)
+      allow(ActiveRecord::Materialized::MaintenanceStore).to receive(:new).with(view_class).and_return(store)
+
+      result = described_class.new(view_class).refresh!
+
+      expect(result.row_count).to eq(2)              # the no-op loser reports the real total, never 0
+      expect(view_class.metadata.row_count).to eq(2) # ...so run_cycle persists 2, not a clobbering 0
+    end
+
     context "with a GROUP BY view" do
       let(:view_class) { define_view("mv_default_incremental", :sales_by_category_with_totals) }
 
