@@ -50,12 +50,11 @@ module ActiveRecord
 
       sig { params(relation: ::ActiveRecord::Relation).returns(Integer) }
       def atomic_swap!(relation)
-        connection = view_class.connection
         temp_table = refresh_temp_table_name
         old_table = refresh_old_table_name
 
         populate_temp_table!(temp_table, relation)
-        swap_tables!(connection, temp_table, old_table)
+        TableSwap.new(view_class).swap!(temp_table, old_table)
 
         view_class.reset_column_information
         cache_row_count
@@ -66,15 +65,6 @@ module ActiveRecord
         CacheTableSchema.create_table!(T.cast(view_class, ViewClass), temp_table, relation)
         temp_model = temporary_model(temp_table)
         self.class.new(temp_model).replace_all!(relation)
-      end
-
-      sig { params(connection: Connection, temp_table: String, old_table: String).void }
-      def swap_tables!(connection, temp_table, old_table)
-        connection.transaction do
-          connection.rename_table(view_class.table_name, old_table) if view_class.table_exists?
-          connection.rename_table(temp_table, view_class.table_name)
-          connection.drop_table(old_table, if_exists: true)
-        end
       end
 
       sig { returns(String) }

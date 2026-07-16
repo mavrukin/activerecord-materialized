@@ -16,11 +16,11 @@ bundle exec srb tc
 # has produced the fixture database.
 HEAVY_SPEC="spec/active_record/materialized/async_refresher_flush_spec.rb"
 
-# The fast run excludes only the real-DB matrix spec (needs MySQL/Postgres
-# containers — see .github/workflows/db-*.yml); the pure-Ruby registry unit spec
-# (integration_adapters_spec) stays in the fast gate.
+# The fast run excludes the real-DB matrix specs by tag (:db_matrix) — they need
+# MySQL/Postgres containers (see .github/workflows/db-*.yml). The pure-Ruby registry
+# unit spec (integration_adapters_spec) is untagged and stays in the fast gate.
 echo "==> RSpec"
-bundle exec rspec --exclude-pattern "$HEAVY_SPEC,spec/integration/cdc_matrix_spec.rb"
+bundle exec rspec --exclude-pattern "$HEAVY_SPEC" --tag '~db_matrix'
 
 echo "==> RSpec (benchmark integration, isolated)"
 bundle exec rspec "$HEAVY_SPEC"

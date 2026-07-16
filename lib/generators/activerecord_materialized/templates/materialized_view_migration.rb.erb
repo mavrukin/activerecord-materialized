@@ -4,7 +4,7 @@ class <%= builder.migration_class_name %> < ActiveRecord::Migration[<%= builder.
   def change
     create_table :<%= builder.table_name %> do |t|
 <% builder.column_definitions.each do |column| -%>
-      t.<%= column.type %> :<%= column.name %>
+      t.<%= column.type %> :<%= column.name %><%= column.migration_arguments %>
 <% end -%>
     end
   end

@@ -3,17 +3,36 @@
 
 module ActiveRecord
   module Materialized
-    # Infers a view's cache-table columns from its source relation and provisions the table.
+    # Provisions a view's cache table from its source relation. The per-column type
+    # inference lives in ColumnTypeInference; this module maps the inferred definitions
+    # onto create_table (and, via MigrationBuilder, a generated migration).
     #
     # @api private
     module CacheTableSchema
       extend T::Sig
 
-      # An inferred cache-table column: name from the relation projection, type
-      # one of :integer, :decimal, :boolean, :datetime, :string.
+      # An inferred cache-table column: name from the relation projection, a create_table
+      # column type, and — for a :decimal — the precision/scale that preserve value
+      # fidelity (a bare `decimal` is DECIMAL(10,0) on MySQL, which truncates).
       class ColumnDefinition < T::Struct
+        extend T::Sig
+
         const :name, String
         const :type, Symbol
+        const :precision, T.nilable(Integer), default: nil
+        const :scale, T.nilable(Integer), default: nil
+
+        # create_table options for this column (precision/scale for a decimal; none otherwise).
+        sig { returns(T::Hash[Symbol, Integer]) }
+        def options
+          { precision: precision, scale: scale }.compact
+        end
+
+        # The trailing arguments for a `t.<type> :<name>` migration line ("" when none).
+        sig { returns(String) }
+        def migration_arguments
+          options.map { |key, value| ", #{key}: #{value}" }.join
+        end
       end
 
       module_function
@@ -31,14 +50,15 @@ module ActiveRecord
         build_table!(view_class.connection, table_name, relation)
       end
 
-      # The inferred MV columns (names from the projection, types from a one-row
-      # probe). Shared by table creation, migration generation, and drift checks.
+      # The inferred MV columns. Names come from the query's projection (authoritative, via
+      # a zero-row probe); each column's type is inferred structurally from its projected
+      # node by ColumnTypeInference. Shared by table creation, migration generation, and
+      # drift checks.
       sig { params(connection: Connection, relation: ::ActiveRecord::Relation).returns(T::Array[ColumnDefinition]) }
       def column_definitions(connection, relation)
-        result = connection.exec_query(relation.limit(1).to_sql)
-        sample = result.rows.first
-        result.columns.each_with_index.map do |name, index|
-          ColumnDefinition.new(name: name, type: type_for_value(sample&.at(index)))
+        nodes = T.unsafe(relation).select_values
+        connection.exec_query(relation.limit(0).to_sql).columns.each_with_index.map do |name, index|
+          ColumnTypeInference.definition_for(connection, relation, nodes[index], name)
         end
       end
 
@@ -46,22 +66,12 @@ module ActiveRecord
       def build_table!(connection, table_name, relation)
         definitions = column_definitions(connection, relation)
         connection.create_table(table_name) do |table|
-          definitions.each { |definition| T.unsafe(table).public_send(definition.type, definition.name) }
+          definitions.each do |definition|
+            T.unsafe(table).public_send(definition.type, definition.name, **definition.options)
+          end
         end
       end
       private_class_method :build_table!
-
-      sig { params(value: T.untyped).returns(Symbol) }
-      def type_for_value(value)
-        case value
-        when Integer then :integer
-        when Float, BigDecimal then :decimal
-        when TrueClass, FalseClass then :boolean
-        when Time, Date, DateTime, ::ActiveSupport::TimeWithZone then :datetime
-        else :string
-        end
-      end
-      private_class_method :type_for_value
     end
   end
 end

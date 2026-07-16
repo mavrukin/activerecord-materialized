@@ -23,6 +23,13 @@ via *scoped* maintenance — all observed through the gem's real instrumentation
 > follow-up. The servers are still started **configured for CDC** (ROW binlog,
 > `wal_level=logical`) to match production and ready that work.
 
+## What the suite covers
+
+- **`integration_adapters_spec`** — pure-Ruby registry unit checks (env parsing, `ARM_ONLY`, availability). Runs in the fast gate; no database.
+- **`cdc_matrix_spec`** (#70) — per engine: a raw write bypasses callbacks, is relayed via `ingest_change`, and the view converges via scoped maintenance.
+- **`load_bearing_spec`** (#84) — per engine: a wide multi-aggregate view (`COUNT`/`SUM`/`AVG`/`MIN`/`MAX`/`COUNT DISTINCT`) and a join-keyed view, driven with varied mutations (create, partition-moving update, delete, bulk write) at volume, asserting convergence and engine-consistent inferred column types.
+- **`concurrency_spec`** (#84) — spawns concurrent writer and reader processes while the parent rebuilds the view mid-flight, asserting no process crashes, no torn/empty reads, and re-convergence. Runs on **MySQL and PostgreSQL**: workers are *spawned* as fresh processes (not forked), so each opens its own clean connection and libpq's fork-unsafety is avoided. SQLite is skipped — its in-process `:memory:` database isn't shared across separate processes.
+
 ## Running the matrix locally
 
 Requires Docker. The `pg` and `trilogy` adapters are **not** installed or loaded by
