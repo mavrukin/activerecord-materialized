@@ -97,6 +97,16 @@ module IntegrationSchema
     )
   end
 
+  # #75 summary-delta view: COUNT + SUM (distributive aggregates plus a row count), callback-fed
+  # and manually refreshed, so writes accumulate an additive delta that concurrent refreshers race
+  # to consume — exercising the non-idempotent summary-delta path under the real cross-process lock.
+  def define_delta_view(table_name)
+    build_view(
+      table_name, :arm_line_items,
+      changes: :callbacks, source: -> { IntegrationSchema.line_items_by_category }
+    ) { refresh_on_change :manual }
+  end
+
   # #84 join-keyed view: grouped by the JOINED authors.country, scoped-recompute
   # maintained, with a partition_key_for resolver for leaf-table (books) writes.
   def define_pages_by_country_view(table_name)
