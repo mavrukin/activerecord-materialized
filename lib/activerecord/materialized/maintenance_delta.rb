@@ -1,4 +1,3 @@
-# typed: strict
 # frozen_string_literal: true
 
 module ActiveRecord
@@ -7,46 +6,34 @@ module ActiveRecord
     #
     # @api private
     class MaintenanceDelta
-      extend T::Sig
-
       SCOPED = :scoped
       FULL = :full_partition
 
-      sig { returns(Symbol) }
-      attr_reader :scope
+      attr_reader :scope, :key_tuples
 
-      sig { returns(T::Array[T::Array[String]]) }
-      attr_reader :key_tuples
-
-      sig { params(scope: Symbol, key_tuples: T::Array[T::Array[String]]).void }
       def initialize(scope:, key_tuples: [])
         @scope = scope
         @key_tuples = key_tuples
       end
 
-      sig { params(key_tuples: T::Array[T::Array[String]]).returns(MaintenanceDelta) }
       def self.scoped(key_tuples)
         new(scope: SCOPED, key_tuples: key_tuples)
       end
 
-      sig { returns(MaintenanceDelta) }
       def self.full_partition
         new(scope: FULL)
       end
 
-      sig { returns(T::Boolean) }
       def full_partition?
         scope == FULL
       end
 
       # How many distinct partitions this pending maintenance tracks. A
       # full-partition recompute tracks none — it is already the collapsed form.
-      sig { returns(Integer) }
       def tracked_partition_count
         full_partition? ? 0 : key_tuples.size
       end
 
-      sig { params(other: MaintenanceDelta).returns(MaintenanceDelta) }
       def merge(other)
         return other if other.full_partition?
         return self if full_partition?
@@ -55,7 +42,6 @@ module ActiveRecord
         self.class.scoped(combined)
       end
 
-      sig { returns(T::Hash[String, T.untyped]) }
       def serialize
         {
           "scope" => scope.to_s,
@@ -63,7 +49,6 @@ module ActiveRecord
         }
       end
 
-      sig { params(payload: T.nilable(T::Hash[String, T.untyped])).returns(T.nilable(MaintenanceDelta)) }
       def self.deserialize(payload)
         return nil if payload.blank?
 
@@ -73,7 +58,7 @@ module ActiveRecord
         if scope_name == FULL
           full_partition
         else
-          tuples = T.cast(payload["key_tuples"], T.nilable(T::Array[T::Array[String]])) || []
+          tuples = payload["key_tuples"] || []
           scoped(tuples)
         end
       end

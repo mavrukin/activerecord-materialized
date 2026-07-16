@@ -1,4 +1,3 @@
-# typed: strict
 # frozen_string_literal: true
 
 module ActiveRecord
@@ -10,13 +9,10 @@ module ActiveRecord
       #
       # @api private
       module Reconciliation
-        extend T::Sig
-
         module_function
 
         # Stamp a completed reconciliation pass, resetting the staleness clock even
         # when no partition needed repair.
-        sig { params(metadata: Metadata, repaired_partition_count: Integer).void }
         def mark!(metadata, repaired_partition_count:)
           metadata.record.update!(
             last_reconciled_at: Timestamps.current,

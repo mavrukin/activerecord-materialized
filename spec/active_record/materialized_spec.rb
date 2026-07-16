@@ -26,7 +26,6 @@ RSpec.describe ActiveRecord::Materialized do
     expect(gemspec.files).not_to include(
       a_string_starting_with("spec/"),
       a_string_starting_with("benchmark/"),
-      a_string_starting_with("sorbet/"),
       "CLAUDE.md"
     )
   end

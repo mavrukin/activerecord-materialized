@@ -1,4 +1,3 @@
-# typed: strict
 # frozen_string_literal: true
 
 module ActiveRecord
@@ -10,47 +9,36 @@ module ActiveRecord
     # so emptied partitions can be detected; everything else falls back to scoped
     # recompute, which is always correct.
     class AggregateAnalysis
-      extend T::Sig
-
       # One classified aggregate column from a view's projection.
       #
       # @api private
-      class Column < T::Struct
-        const :name, String
-        const :function, Symbol
-        const :attribute, T.nilable(String)
-        const :counts_rows, T::Boolean, default: false
+      Column = Data.define(:name, :function, :attribute, :counts_rows) do
+        def initialize(name:, function:, attribute: nil, counts_rows: false) = super
       end
 
-      sig { params(relation: ::ActiveRecord::Relation).void }
       def initialize(relation)
         @relation = relation
-        @aggregate_columns = T.let(nil, T.nilable(T::Array[Column]))
+        @aggregate_columns = nil
       end
 
-      sig { returns(T::Array[Column]) }
       def aggregate_columns
-        @aggregate_columns ||= T.unsafe(@relation).select_values.filter_map { |value| classify(value) }
+        @aggregate_columns ||= @relation.select_values.filter_map { |value| classify(value) }
       end
 
-      sig { returns(T::Boolean) }
       def delta_maintainable?
         single_table? && grouped? && !having? && distributive_aggregates? && aggregate_columns.any?(&:counts_rows)
       end
 
-      sig { returns(T::Boolean) }
       def distributive_aggregates?
         aggregate_columns.any? && aggregate_columns.all? { |column| distributive?(column) }
       end
 
-      sig { returns(T.nilable(Column)) }
       def row_count_column
         aggregate_columns.find(&:counts_rows)
       end
 
       private
 
-      sig { params(value: T.untyped).returns(T.nilable(Column)) }
       def classify(value)
         return nil unless value.is_a?(::Arel::Nodes::As)
 
@@ -66,7 +54,6 @@ module ActiveRecord
         end
       end
 
-      sig { params(name: String, node: T.untyped).returns(Column) }
       def count_column(name, node)
         return Column.new(name: name, function: :count_distinct, attribute: attribute_name(node)) if node.distinct
         return Column.new(name: name, function: :count_star, counts_rows: true) if star?(node)
@@ -75,7 +62,6 @@ module ActiveRecord
         Column.new(name: name, function: :count, attribute: attribute, counts_rows: not_null_column?(attribute))
       end
 
-      sig { params(column: Column).returns(T::Boolean) }
       def distributive?(column)
         case column.function
         # A SUM over a nullable column can be NULL, which a zero delta can't
@@ -87,45 +73,38 @@ module ActiveRecord
         end
       end
 
-      sig { params(node: T.untyped).returns(T.nilable(String)) }
       def attribute_name(node)
         inner = node.expressions.first
-        inner.is_a?(::Arel::Attributes::Attribute) ? T.unsafe(inner).name.to_s : nil
+        inner.is_a?(::Arel::Attributes::Attribute) ? inner.name.to_s : nil
       end
 
-      sig { params(node: T.untyped).returns(T::Boolean) }
       def star?(node)
         inner = node.expressions.first
         !!(inner.is_a?(::Arel::Nodes::SqlLiteral) && inner.to_s == "*")
       end
 
-      sig { params(value: ::Arel::Nodes::As).returns(String) }
       def alias_name(value)
-        right = T.unsafe(value).right
+        right = value.right
         right.respond_to?(:name) ? right.name.to_s : right.to_s
       end
 
-      sig { params(attribute: T.nilable(String)).returns(T::Boolean) }
       def not_null_column?(attribute)
         return false if attribute.nil?
 
-        column = T.unsafe(@relation).klass.columns_hash[attribute]
+        column = @relation.klass.columns_hash[attribute]
         !column.nil? && !column.null
       end
 
-      sig { returns(T::Boolean) }
       def single_table?
-        T.unsafe(@relation).joins_values.empty? && T.unsafe(@relation).from_clause.value.nil?
+        @relation.joins_values.empty? && @relation.from_clause.value.nil?
       end
 
-      sig { returns(T::Boolean) }
       def grouped?
-        T.unsafe(@relation).group_values.any?
+        @relation.group_values.any?
       end
 
-      sig { returns(T::Boolean) }
       def having?
-        !T.unsafe(@relation).having_clause.empty?
+        !@relation.having_clause.empty?
       end
     end
   end

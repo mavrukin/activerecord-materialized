@@ -1,4 +1,3 @@
-# typed: strict
 # frozen_string_literal: true
 
 module ActiveRecord
@@ -8,16 +7,13 @@ module ActiveRecord
     # `:none` installs no callbacks and expects changes through the public
     # ingestion API from an external adapter.
     module ChangeSource
-      extend T::Sig
-
       CALLBACKS = :callbacks
       NONE = :none
-      NAMES = T.let([CALLBACKS, NONE].freeze, T::Array[Symbol])
+      NAMES = [CALLBACKS, NONE].freeze
 
       # Validates and normalizes a change-source name, raising on an unknown one
       # so a typo fails loudly at definition/configuration time instead of
       # silently disabling all maintenance for the view.
-      sig { params(source: T.any(Symbol, String)).returns(Symbol) }
       def self.cast(source)
         name = source.to_sym
         return name if NAMES.include?(name)

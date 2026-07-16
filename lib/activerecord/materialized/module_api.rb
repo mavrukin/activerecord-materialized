@@ -1,4 +1,3 @@
-# typed: strict
 # frozen_string_literal: true
 
 module ActiveRecord
@@ -13,19 +12,16 @@ module ActiveRecord
   # @see Materialized::Configuration the configurable settings
   module Materialized
     class << self
-      extend T::Sig
-
-      @configuration = T.let(nil, T.nilable(Configuration))
+      @configuration = nil
 
       # The global configuration object. Prefer {configure} for setting values.
       #
       # @return [Configuration] the current configuration (created on first use)
-      sig { returns(Configuration) }
       def configuration
         config = @configuration
         if config.nil?
           config = Configuration.new
-          @configuration = T.let(config, T.nilable(Configuration))
+          @configuration = config
         end
         config
       end
@@ -41,17 +37,14 @@ module ActiveRecord
       #
       # @yieldparam config [Configuration]
       # @return [void]
-      sig { params(block: T.proc.params(config: Configuration).void).void }
       def configure(&block)
         yield(configuration)
       end
 
-      sig { returns(String) }
       def metadata_table_name
         configuration.metadata_table_name
       end
 
-      sig { returns(String) }
       def partition_table_name
         configuration.partition_table_name
       end
@@ -62,7 +55,6 @@ module ActiveRecord
       #
       # @raise [SchemaVerifier::SchemaDriftError] on the first drifted view
       # @return [void]
-      sig { void }
       def verify_schema!
         registered = Registry.all
         registered.each { |view_class| SchemaVerifier.new(view_class).verify! }
@@ -75,7 +67,6 @@ module ActiveRecord
       # @param mode [Symbol] +:row_count+, +:checksum+, or +:full+
       # @param sample [Numeric, nil] verify a random subset (Integer count / Float fraction)
       # @return [Array<DataVerificationResult>]
-      sig { params(mode: Symbol, sample: T.nilable(Numeric)).returns(T::Array[DataVerificationResult]) }
       def verify_data(mode: :checksum, sample: nil)
         Registry.all.map { |view_class| DataVerifier.new(view_class, mode: mode, sample: sample).verify }
       end
@@ -85,7 +76,6 @@ module ActiveRecord
       #
       # @raise [DataVerifier::DataDriftError] listing the drifted views
       # @return [Array<DataVerificationResult>]
-      sig { params(mode: Symbol, sample: T.nilable(Numeric)).returns(T::Array[DataVerificationResult]) }
       def verify_data!(mode: :checksum, sample: nil)
         results = verify_data(mode: mode, sample: sample)
         drifted = results.select(&:drifted?)
@@ -101,7 +91,6 @@ module ActiveRecord
       # @param mode [Symbol] drift-check depth: +:row_count+, +:checksum+, or +:full+
       # @param sample [Numeric, nil] verify a random subset (Integer count / Float fraction)
       # @return [Array<ReconcileResult>]
-      sig { params(mode: Symbol, sample: T.nilable(Numeric)).returns(T::Array[ReconcileResult]) }
       def reconcile!(mode: :checksum, sample: nil)
         Registry.reconcile_all!(mode: mode, sample: sample)
       end
@@ -113,7 +102,6 @@ module ActiveRecord
       # @param mode [Symbol] drift-check depth: +:row_count+, +:checksum+, or +:full+
       # @param sample [Numeric, nil] verify a random subset (Integer count / Float fraction)
       # @return [Array<ReconcileResult>] one per reconciled (stale) view
-      sig { params(mode: Symbol, sample: T.nilable(Numeric)).returns(T::Array[ReconcileResult]) }
       def reconcile_stale!(mode: :checksum, sample: nil)
         Registry.reconcile_stale!(mode: mode, sample: sample)
       end
@@ -127,7 +115,6 @@ module ActiveRecord
       #
       # @param change [WriteChange] the committed write to publish
       # @return [void]
-      sig { params(change: WriteChange).void }
       def publish_write_change!(change)
         DependencyRegistry.publish_write_change!(change)
       end
@@ -140,7 +127,6 @@ module ActiveRecord
       #
       # @param tables [Array<String>] dependency table names
       # @return [void]
-      sig { params(tables: T::Array[String]).void }
       def mark_dirty_for_tables!(tables)
         DependencyRegistry.mark_dirty_for_tables!(tables)
       end
@@ -166,15 +152,6 @@ module ActiveRecord
       # @param before [Hash, nil] pre-image, for +:update+/+:destroy+
       # @param after [Hash, nil] post-image, for +:create+/+:update+
       # @return [void]
-      sig do
-        params(
-          table: String,
-          operation: WriteChange::Operation,
-          key_attributes: T.nilable(WriteChange::AttributeInput),
-          before: T.nilable(WriteChange::AttributeInput),
-          after: T.nilable(WriteChange::AttributeInput)
-        ).void
-      end
       def ingest_change(table:, operation:, key_attributes: nil, before: nil, after: nil)
         publish_write_change!(
           WriteChange.from_descriptor(
@@ -184,19 +161,14 @@ module ActiveRecord
         )
       end
 
-      sig { returns(T::Boolean) }
       def atomic_swap_refresh?
         configuration.atomic_swap_refresh
       end
 
-      sig { params(value: Configuration).void }
-      def configuration=(value)
-        @configuration = T.let(value, T.nilable(Configuration))
-      end
+      attr_writer :configuration
 
       private
 
-      sig { params(results: T::Array[DataVerificationResult]).returns(String) }
       def data_drift_message(results)
         summary = results.map do |result|
           "#{result.view_name} (#{result.missing_keys.size} missing, " \

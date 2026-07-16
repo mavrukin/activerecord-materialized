@@ -1,4 +1,3 @@
-# typed: strict
 # frozen_string_literal: true
 
 module ActiveRecord
@@ -7,8 +6,6 @@ module ActiveRecord
     #
     # @api private
     class Refresher
-      extend T::Sig
-
       # Raised when a refresh or rebuild fails.
       class RefreshError < StandardError; end
 
@@ -19,17 +16,14 @@ module ActiveRecord
       # otherwise mark the view failed and clear the *live* cycle's `refreshing` guard.
       class AlreadyRefreshingError < RefreshError; end
 
-      sig { returns(ViewClass) }
       attr_reader :view_class
 
-      sig { params(view_class: ViewClass).void }
       def initialize(view_class)
         @view_class = view_class
-        @metadata = T.let(nil, T.nilable(Metadata))
+        @metadata = nil
       end
 
       # Full materialization — the only path that scans all base data.
-      sig { returns(RefreshResult) }
       def rebuild!
         Instrumentation.refresh(view_class, operation: :rebuild) do |payload|
           payload[:mode] = :full
@@ -42,7 +36,6 @@ module ActiveRecord
       end
 
       # Incremental maintenance only; a no-op when the view is not maintainable.
-      sig { returns(RefreshResult) }
       def refresh!
         Instrumentation.refresh(view_class, operation: :incremental) do |payload|
           next RefreshResult.skipped(view_class) unless maintainable?
@@ -57,7 +50,6 @@ module ActiveRecord
 
       private
 
-      sig { returns(T::Boolean) }
       def maintainable?
         return false unless view_class.incrementally_maintainable?
 
@@ -71,7 +63,6 @@ module ActiveRecord
         true
       end
 
-      sig { params(operation: T.proc.returns(Integer)).returns(RefreshResult) }
       def run_cycle(operation)
         raise AlreadyRefreshingError, "#{view_class.name} is already refreshing" if metadata.refreshing?
 
@@ -85,7 +76,6 @@ module ActiveRecord
         result
       end
 
-      sig { returns(Integer) }
       def perform_rebuild!
         row_count = RelationCacheWriter.new(view_class).atomic_swap!(view_class.resolved_source)
         metadata.mark_warm!
@@ -94,28 +84,23 @@ module ActiveRecord
         row_count
       end
 
-      sig { params(error: StandardError).returns(T.noreturn) }
       def fail_refresh!(error)
         metadata.mark_failed!(error)
         raise RefreshError, "Failed to refresh #{view_class.name}: #{error.message}", error.backtrace
       end
 
-      sig { returns(Metadata) }
       def metadata
         @metadata ||= view_class.metadata
       end
 
-      sig { returns(Float) }
       def monotonic_clock
-        T.cast(Process.clock_gettime(Process::CLOCK_MONOTONIC), Float)
+        Process.clock_gettime(Process::CLOCK_MONOTONIC)
       end
 
-      sig { params(started_at: Float).returns(Integer) }
       def elapsed_milliseconds(started_at)
         ((monotonic_clock - started_at) * 1000).round
       end
 
-      sig { params(row_count: Integer, duration_ms: Integer).returns(RefreshResult) }
       def complete_refresh!(row_count:, duration_ms:)
         metadata.mark_refreshed!(row_count: row_count, duration_ms: duration_ms)
         RefreshResult.new(

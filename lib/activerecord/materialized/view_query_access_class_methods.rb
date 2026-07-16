@@ -1,4 +1,3 @@
-# typed: strict
 # frozen_string_literal: true
 
 module ActiveRecord
@@ -9,86 +8,97 @@ module ActiveRecord
     # Read and refresh API mixed into a {View}: `rebuild!`, `refresh!`, `refresh_if_stale!`,
     # `materialized?`, `stale?`, `dirty?`, and the routed query methods.
     module ViewQueryAccessClassMethods
-      extend T::Sig
-      extend T::Helpers
-
-      sig { params(base: T.class_of(View)).void }
       def self.included(base)
         base.extend(ClassMethods)
       end
 
       # The read and refresh methods available on a {View} subclass.
       module ClassMethods
-        extend T::Sig
-
-        sig { returns(T.class_of(View)) }
         def view_class
-          T.cast(self, T.class_of(View))
+          self
         end
 
-        sig { returns(T::Boolean) }
+        # Whether the view needs refreshing — dirty, never refreshed, or past its +max_staleness+.
+        #
+        # @return [Boolean]
         def stale?
           view_class.metadata.stale?
         end
 
-        sig { returns(T::Boolean) }
+        # Whether dependency writes have marked the view dirty since its last refresh.
+        #
+        # @return [Boolean]
         def dirty?
           view_class.metadata.dirty?
         end
 
-        sig { returns(T::Boolean) }
+        # Whether the view has been fully materialized; cold views are served read-through.
+        #
+        # @return [Boolean]
         def warm?
           view_class.metadata.warm?
         end
 
         # Reads are served from the cache only once warmed and the table exists;
         # otherwise they fall through to the cold-read path.
-        sig { returns(T::Boolean) }
+        #
+        # @return [Boolean]
         def materialized?
           view_class.table_exists? && view_class.metadata.warm?
         end
 
-        sig { returns(T.nilable(Timestamp)) }
+        # When the view was last refreshed, or +nil+ if it never has been.
+        #
+        # @return [Time, nil]
         def last_refreshed_at
           view_class.metadata.last_refreshed_at
         end
 
-        sig { returns(T::Boolean) }
+        # Whether a refresh is currently in progress for the view.
+        #
+        # @return [Boolean]
         def refreshing?
           view_class.metadata.refreshing?
         end
 
-        sig { void }
         def mark_dependencies_changed!
           view_class.metadata.mark_dirty!
         end
 
-        sig { returns(T::Boolean) }
         def table_exists?
           view_class.connection.data_source_exists?(view_class.table_name)
         end
 
         # Incremental maintenance only — never scans all base data.
-        sig { returns(RefreshResult) }
+        #
+        # @return [RefreshResult]
         def refresh!
           Refresher.new(view_class).refresh!
         end
 
-        sig { returns(T.nilable(RefreshResult)) }
+        # Refreshes the view only when it is materialized and stale; otherwise a no-op.
+        #
+        # @return [RefreshResult, nil] the refresh result, or +nil+ when no refresh was needed
         def refresh_if_stale!
           refresh! if materialized? && stale?
         end
 
         # Verify this view's contents against its source and repair any drift with
         # scoped maintenance (never a full rebuild). See {Reconciler}.
-        sig { params(mode: Symbol, sample: T.nilable(Numeric)).returns(ReconcileResult) }
+        #
+        # @param mode [Symbol] drift-check depth: +:row_count+, +:checksum+, or +:full+
+        # @param sample [Numeric, nil] verify a random subset (Integer count / Float fraction)
+        # @return [ReconcileResult]
         def reconcile!(mode: :checksum, sample: nil)
           Reconciler.new(view_class, mode: mode, sample: sample).reconcile!
         end
 
         # The only path that scans all base data; `confirm:` guards against
         # firing a full materialization by accident.
-        sig { params(confirm: T::Boolean).returns(RefreshResult) }
+        #
+        # @param confirm [Boolean] must be +true+ to run the full materialization
+        # @raise [ArgumentError] unless +confirm+ is true
+        # @return [RefreshResult]
         def rebuild!(confirm: false)
           unless confirm
             Kernel.raise ArgumentError,
@@ -98,40 +108,32 @@ module ActiveRecord
           Refresher.new(view_class).rebuild!
         end
 
-        sig { params(args: T.untyped).returns(T.untyped) }
         def all(*args)
           read_router.scope.all(*args)
         end
 
-        sig { params(args: T.untyped).returns(T.untyped) }
         def where(*args)
           read_router.partition_scope(args).where(*args)
         end
 
-        sig { params(args: T.untyped).returns(T.untyped) }
         def find(*args)
           read_router.scope.find(*args)
         end
 
-        sig { params(args: T.untyped).returns(T.untyped) }
         def find_by(*args)
           read_router.partition_scope(args).find_by(*args)
         end
 
-        sig { params(args: T.untyped).returns(T.untyped) }
         def count(*args)
           read_router.scope.count(*args)
         end
 
         private
 
-        sig { returns(ReadRouter) }
         def read_router
           ReadRouter.new(view_class)
         end
       end
-
-      mixes_in_class_methods ClassMethods
     end
   end
 end

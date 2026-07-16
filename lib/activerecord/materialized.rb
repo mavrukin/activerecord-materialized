@@ -1,7 +1,5 @@
-# typed: strict
 # frozen_string_literal: true
 
-require "sorbet-runtime"
 require "active_record"
 require "active_support/concern"
 require "active_support/core_ext/string/inflections"
@@ -10,8 +8,6 @@ require "active_support/core_ext/integer/time"
 require "active_support/core_ext/object/blank"
 require "securerandom"
 
-require_relative "../activerecord_materialized_types"
-require_relative "materialized/type_reexports"
 require_relative "materialized/change_source"
 require_relative "materialized/configuration"
 require_relative "materialized/module_api"
@@ -32,7 +28,6 @@ require_relative "materialized/view_refresh_policy_class_methods"
 require_relative "materialized/view_configuration_class_methods"
 require_relative "materialized/view_query_access_class_methods"
 require_relative "materialized/view"
-require_relative "materialized/view_class"
 require_relative "materialized/refresh_result"
 require_relative "materialized/refresher"
 require_relative "materialized/maintenance_delta"

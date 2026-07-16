@@ -1,4 +1,3 @@
-# typed: strict
 # frozen_string_literal: true
 
 module ActiveRecord
@@ -7,20 +6,15 @@ module ActiveRecord
     #
     # @api private
     class RelationCacheWriter
-      extend T::Sig
-
-      sig { params(view_class: T.class_of(::ActiveRecord::Base)).void }
       def initialize(view_class)
         @view_class = view_class
       end
 
-      sig { params(relation: ::ActiveRecord::Relation).returns(Integer) }
       def bootstrap!(relation)
         CacheTableSchema.ensure_table!(view_class, relation)
         replace_all!(relation)
       end
 
-      sig { params(relation: ::ActiveRecord::Relation).returns(Integer) }
       def replace_all!(relation)
         view_class.transaction do
           view_class.delete_all
@@ -29,13 +23,6 @@ module ActiveRecord
         cache_row_count
       end
 
-      sig do
-        params(
-          relation: ::ActiveRecord::Relation,
-          key_tuples: T::Array[T::Array[String]],
-          full_partition: T::Boolean
-        ).returns(Integer)
-      end
       def replace_partitions!(relation, key_tuples:, full_partition:)
         view_class.transaction do
           if full_partition
@@ -48,7 +35,6 @@ module ActiveRecord
         cache_row_count
       end
 
-      sig { params(relation: ::ActiveRecord::Relation).returns(Integer) }
       def atomic_swap!(relation)
         temp_table = refresh_temp_table_name
         old_table = refresh_old_table_name
@@ -60,66 +46,57 @@ module ActiveRecord
         cache_row_count
       end
 
-      sig { params(temp_table: String, relation: ::ActiveRecord::Relation).void }
       def populate_temp_table!(temp_table, relation)
-        CacheTableSchema.create_table!(T.cast(view_class, ViewClass), temp_table, relation)
+        CacheTableSchema.create_table!(view_class, temp_table, relation)
         temp_model = temporary_model(temp_table)
         self.class.new(temp_model).replace_all!(relation)
       end
 
-      sig { returns(String) }
       def refresh_temp_table_name
         "#{view_class.table_name}_refresh_#{SecureRandom.hex(4)}"
       end
 
-      sig { returns(String) }
       def refresh_old_table_name
         "#{view_class.table_name}_old_#{SecureRandom.hex(4)}"
       end
 
       private
 
-      sig { returns(T.class_of(::ActiveRecord::Base)) }
       attr_reader :view_class
 
       # Count straight from the cache table, bypassing the View read routing
       # (during a rebuild the view is not warm yet, so a routed count would read
       # through to the source).
-      sig { returns(Integer) }
       def cache_row_count
-        T.unsafe(view_class).unscoped.count
+        view_class.unscoped.count
       end
 
-      sig { params(key_tuples: T::Array[T::Array[String]]).void }
       def delete_partitions!(key_tuples)
-        materialized_view = T.cast(view_class, ViewClass)
+        materialized_view = view_class
         materialized_view.view_definition.partition_scope_on(view_class, key_tuples).delete_all
       end
 
       # INSERT ... SELECT entirely in the database; the result set never crosses
       # into Ruby. Cache columns share the relation's projection order, so the
       # SELECT list maps onto them positionally.
-      sig { params(relation: ::ActiveRecord::Relation).void }
       def insert_rows!(relation)
         columns = view_class.column_names - ["id"]
         return if columns.empty?
 
-        T.unsafe(view_class.connection).execute(insert_select_sql(relation, columns))
+        view_class.connection.execute(insert_select_sql(relation, columns))
       end
 
-      sig { params(relation: ::ActiveRecord::Relation, columns: T::Array[String]).returns(String) }
       def insert_select_sql(relation, columns)
         manager = Arel::InsertManager.new
         manager.into(view_class.arel_table)
-        T.unsafe(manager).columns.concat(columns.map { |name| view_class.arel_table[name] })
+        manager.columns.concat(columns.map { |name| view_class.arel_table[name] })
         manager.select(Arel.sql(relation.to_sql))
         manager.to_sql
       end
 
-      sig { params(table_name: String).returns(T.class_of(::ActiveRecord::Base)) }
       def temporary_model(table_name)
         klass = Class.new(::ActiveRecord::Base)
-        T.unsafe(klass).table_name = table_name
+        klass.table_name = table_name
         klass
       end
     end

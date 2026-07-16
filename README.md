@@ -816,13 +816,13 @@ Until `1.0.0`, the API may still change between minor releases; pin a version if
 ```bash
 git clone https://github.com/mavrukin/activerecord-materialized.git
 cd activerecord-materialized
-bin/setup            # bundle install + git hooks + Sorbet RBIs
-bin/ci               # RuboCop, Sorbet, and the full test suite
+bin/setup            # bundle install + git hooks
+bin/ci               # RuboCop and the full test suite
 bundle exec rake benchmark:setup
 bundle exec rake benchmark
 ```
 
-**API documentation** is published at [rubydoc.info/gems/activerecord-materialized](https://rubydoc.info/gems/activerecord-materialized) (generated from YARD doc comments, with types pulled from the Sorbet signatures via `yard-sorbet`). Build it locally with:
+**API documentation** is published at [rubydoc.info/gems/activerecord-materialized](https://rubydoc.info/gems/activerecord-materialized) (generated from YARD doc comments, with `@param`/`@return` types authored directly on the public API). Build it locally with:
 
 ```bash
 bundle exec yard doc      # generates HTML into doc/

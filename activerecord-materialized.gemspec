@@ -3,8 +3,8 @@
 require_relative "lib/activerecord/materialized/version"
 
 # Ship only what a consumer needs at runtime: the library and the
-# top-level docs. Everything else (specs, benchmarks, Sorbet RBIs, dev
-# tooling, CI config) stays in the repository and out of the package.
+# top-level docs. Everything else (specs, benchmarks, dev tooling,
+# CI config) stays in the repository and out of the package.
 PACKAGED_DOCS = %w[README.md LICENSE CHANGELOG.md].freeze
 
 packaged_file = lambda do |path|
@@ -47,5 +47,4 @@ Gem::Specification.new do |spec|
   spec.add_dependency "activerecord", ">= 8.0"
   spec.add_dependency "activesupport", ">= 8.0"
   spec.add_dependency "railties", ">= 8.0"
-  spec.add_dependency "sorbet-runtime", ">= 0.5"
 end

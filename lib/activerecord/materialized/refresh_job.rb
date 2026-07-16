@@ -1,15 +1,11 @@
-# typed: strict
 # frozen_string_literal: true
 
 module ActiveRecord
   module Materialized
     # ActiveJob wrapper that runs a view's incremental refresh on a background worker.
     class RefreshJob < ::ActiveJob::Base
-      extend T::Sig
-
       queue_as { ::ActiveRecord::Materialized.configuration.refresh_queue_name }
 
-      sig { params(view_key: String).void }
       def perform(view_key)
         view_class = Registry.find(view_key)
         return if view_class.nil?

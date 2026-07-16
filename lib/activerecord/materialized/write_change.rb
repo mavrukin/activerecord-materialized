@@ -1,4 +1,3 @@
-# typed: strict
 # frozen_string_literal: true
 
 module ActiveRecord
@@ -8,30 +7,14 @@ module ActiveRecord
     # changed columns — so maintenance can compute deltas even when the GROUP BY
     # key or a summed column did not change.
     class WriteChange
-      extend T::Sig
-
-      Operation = T.type_alias { T.any(Symbol, String) }
-      Attributes = T.type_alias { T::Hash[String, T.untyped] }
       # A snapshot supplied to {from_descriptor}/{Materialized.ingest_change}: keys
       # may be strings or symbols and are normalized to strings.
-      AttributeInput = T.type_alias { T::Hash[T.any(String, Symbol), T.untyped] }
 
       OPERATIONS = %i[create update destroy].freeze
-      EMPTY_ATTRIBUTES = T.let({}.freeze, AttributeInput)
+      EMPTY_ATTRIBUTES = {}.freeze
 
-      sig { returns(String) }
-      attr_reader :table_name
+      attr_reader :table_name, :operation, :before, :after
 
-      sig { returns(Operation) }
-      attr_reader :operation
-
-      sig { returns(Attributes) }
-      attr_reader :before
-
-      sig { returns(Attributes) }
-      attr_reader :after
-
-      sig { params(table_name: String, operation: Operation, before: Attributes, after: Attributes).void }
       def initialize(table_name:, operation:, before:, after:)
         @table_name = table_name
         @operation = operation
@@ -39,7 +22,6 @@ module ActiveRecord
         @after = after
       end
 
-      sig { params(record: ::ActiveRecord::Base, operation: Operation).returns(WriteChange) }
       def self.from_record(record, operation)
         table_name = record.class.table_name
         case operation.to_sym
@@ -63,15 +45,6 @@ module ActiveRecord
       # image that cannot identify every affected partition — it widens to a full
       # recompute. Snapshot keys may be strings or symbols; an unknown operation is
       # rejected.
-      sig do
-        params(
-          table_name: String,
-          operation: Operation,
-          key_attributes: T.nilable(AttributeInput),
-          before: T.nilable(AttributeInput),
-          after: T.nilable(AttributeInput)
-        ).returns(WriteChange)
-      end
       def self.from_descriptor(table_name:, operation:, key_attributes: nil, before: nil, after: nil)
         op = operation.to_sym
         raise_unsupported_operation!(operation) unless OPERATIONS.include?(op)
@@ -82,7 +55,6 @@ module ActiveRecord
       end
 
       # Full pre-update attributes: current values with changed columns reverted.
-      sig { params(record: ::ActiveRecord::Base).returns(Attributes) }
       def self.old_attributes(record)
         attributes = stringify_keys(record.attributes)
         record.saved_changes.each_pair { |column, (old_value, _new_value)| attributes[column.to_s] = old_value }
@@ -94,14 +66,6 @@ module ActiveRecord
       # can move a row between partitions, so both must be recomputed — when the
       # descriptor cannot identify both (only a partial image, no keys) it widens
       # (empty snapshots => full recompute) rather than silently under-scoping.
-      sig do
-        params(
-          operation: Symbol,
-          key_attributes: T.nilable(AttributeInput),
-          before: T.nilable(AttributeInput),
-          after: T.nilable(AttributeInput)
-        ).returns([AttributeInput, AttributeInput])
-      end
       def self.snapshots_for(operation, key_attributes, before, after)
         keys = key_attributes.presence
         case operation
@@ -112,7 +76,6 @@ module ActiveRecord
       end
 
       # The affected partition's key image, from the row image or the key columns.
-      sig { params(image: T.nilable(AttributeInput), keys: T.nilable(AttributeInput)).returns(AttributeInput) }
       def self.first_present(image, keys)
         image.presence || keys || EMPTY_ATTRIBUTES
       end
@@ -120,10 +83,6 @@ module ActiveRecord
       # An update recomputes both the old and new partition; it scopes only when
       # both are derivable (full images, or key columns for an in-place change) and
       # otherwise widens to a full recompute rather than under-scoping.
-      sig do
-        params(before: T.nilable(AttributeInput), after: T.nilable(AttributeInput), keys: T.nilable(AttributeInput))
-          .returns([AttributeInput, AttributeInput])
-      end
       def self.update_snapshots(before, after, keys)
         return [before, after] if before && after
         return [keys, keys] if keys
@@ -131,12 +90,10 @@ module ActiveRecord
         [EMPTY_ATTRIBUTES, EMPTY_ATTRIBUTES]
       end
 
-      sig { params(operation: Operation).returns(T.noreturn) }
       def self.raise_unsupported_operation!(operation)
         raise ArgumentError, "unsupported write operation: #{operation}"
       end
 
-      sig { params(values: AttributeInput).returns(Attributes) }
       def self.stringify_keys(values)
         values.each_with_object({}) { |(key, value), result| result[key.to_s] = value }
       end

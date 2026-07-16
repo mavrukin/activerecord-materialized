@@ -1,4 +1,3 @@
-# typed: strict
 # frozen_string_literal: true
 
 module ActiveRecord
@@ -7,31 +6,28 @@ module ActiveRecord
     # repaired with scoped maintenance, and whether the run was deferred because a
     # refresh was already in flight (in which case nothing was changed — the next
     # scheduled tick reconciles).
-    class ReconcileResult < T::Struct
-      extend T::Sig
-
-      const :view_name, String
-      const :mode, Symbol
+    ReconcileResult = Data.define(
+      :view_name,
+      :mode,
       # The divergent partition keys reconciliation repaired (missing, extra, or mismatched).
-      const :repaired_keys, T::Array[T::Array[T.untyped]]
+      :repaired_keys,
       # True when a concurrent refresh deferred the run; the queued repair drains later.
-      const :deferred, T::Boolean, default: false
+      :deferred,
       # Set when a batch run (reconcile_all!/reconcile_stale!) caught an error for this
       # view, so one failing view doesn't abort reconciliation for the rest of the fleet.
-      const :error, T.nilable(String), default: nil
+      :error
+    ) do
+      def initialize(view_name:, mode:, repaired_keys:, deferred: false, error: nil) = super
 
-      sig { returns(Integer) }
       def repaired_partition_count
         repaired_keys.size
       end
 
       # Repaired real drift this run — divergence was found and applied, not deferred.
-      sig { returns(T::Boolean) }
       def repaired?
         repaired_keys.any? && !deferred
       end
 
-      sig { returns(T::Boolean) }
       def failed?
         !error.nil?
       end

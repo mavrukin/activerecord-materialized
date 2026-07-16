@@ -1,18 +1,11 @@
 # Local hooks are scoped to changed files for speed. Full validation runs in CI
-# (.github/workflows/ci.yml): all RuboCop, full Sorbet, full RSpec, benchmark integration.
+# (.github/workflows/ci.yml): all RuboCop, full RSpec, benchmark integration.
 pre-commit:
   parallel: true
   commands:
-    strict-sigils:
-      glob: "lib/**/*.rb"
-      run: bin/check-strict-sigils {staged_files}
     rubocop:
       glob: "{lib/**/*.rb,bin/**,**/*.{rb,rake}}"
-      exclude: "sorbet/**/*"
       run: bundle exec rubocop --force-exclusion {staged_files}
-    sorbet:
-      glob: "{lib/**/*.rb,sorbet/**/*,**/*.rbi}"
-      run: bundle exec srb tc
     rspec:
       glob: "{lib/**/*.rb,spec/**/*_spec.rb,spec/spec_helper.rb,spec/support/**}"
       run: bin/hook-rspec {staged_files}
