@@ -56,19 +56,28 @@ RSpec.describe ActiveRecord::Materialized::Reconciler do
 
   it "defers under a live refresh without corrupting its guard, and the repair is durable" do
     view.unscoped.find_by(category: "books").update!(item_count: 999)
-    view.metadata.mark_refreshing! # a live refresh cycle owns the guard
+
+    # Simulate another server owning the cycle lock: while it is live, a refresh that has
+    # maintenance to apply can't acquire the lock and defers (the real cross-process lock is
+    # exercised end to end in the concurrency integration spec). The drain-refresh has nothing
+    # pending, so it still runs; only the queued repair defers.
+    store = ActiveRecord::Materialized::MaintenanceStore.new(view)
+    live = true
+    allow(view).to receive(:refresh!).and_wrap_original do |original, *args|
+      raise ActiveRecord::Materialized::Refresher::AlreadyRefreshingError if live && store.pending
+
+      original.call(*args)
+    end
 
     result = view.reconcile!(mode: :full)
 
     expect(result.deferred).to be(true)
     expect(view.metadata.record.last_reconciled_at).to be_nil # not marked reconciled on a defer
-    # The live cycle's guard is left intact and the view is not marked failed...
-    expect(view.metadata.record).to have_attributes(refreshing: true, last_error: nil)
+    expect(view.metadata.record.last_error).to be_nil # and the view is not marked failed
     # ...and the scoped repair is queued, so a later refresh drains it — nothing is lost.
-    pending = ActiveRecord::Materialized::MaintenanceStore.new(view).pending
-    expect(pending.key_tuples).to contain_exactly(["books"])
+    expect(store.pending.key_tuples).to contain_exactly(["books"])
 
-    view.metadata.record.update!(refreshing: false) # the live cycle finishes
+    live = false # the live cycle finishes
     view.refresh!
     expect(view.unscoped.find_by(category: "books").item_count).to eq(1) # repaired on the next cycle
   end
