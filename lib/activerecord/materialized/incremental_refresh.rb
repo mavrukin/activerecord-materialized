@@ -26,8 +26,10 @@ module ActiveRecord
 
       def apply!(store, pending)
         if pending.is_a?(SummaryDelta)
-          store.clear!
-          return DeltaMaintainer.new(@view_class).apply!(pending)
+          # Consume+apply under a row lock so a concurrent cycle can't apply the same additive delta
+          # twice; a loser that finds it already consumed is a benign no-op (0 rows). The scoped path
+          # below is idempotent (delete + re-aggregate), so a concurrent double-run is merely wasteful.
+          return store.with_consumed_summary_delta { |delta| DeltaMaintainer.new(@view_class).apply!(delta) } || 0
         end
 
         IncrementalMaintainer.new(@view_class).maintain!(@view_class.connection, @view_class.table_name)

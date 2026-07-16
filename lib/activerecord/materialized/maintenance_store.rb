@@ -34,6 +34,22 @@ module ActiveRecord
         delta
       end
 
+      # Atomically consume the pending SummaryDelta and apply it under a row lock on the metadata
+      # row, so concurrent cycles across servers can't apply the same additive delta twice. Yields
+      # the delta to the block (which applies it) inside the locked transaction, so a failed apply
+      # rolls back the clear and the delta is retried. Returns the block's result, or nil when another
+      # cycle already consumed it — the loser blocks on the lock, then reads an empty payload (a
+      # benign no-op). DML-only (no DDL/callbacks), so the lock holds for the whole critical section.
+      def with_consumed_summary_delta
+        metadata.record.with_lock do # blocking FOR UPDATE on the metadata row + a transaction
+          delta = SummaryDelta.deserialize(metadata.maintenance_payload)
+          next nil if delta.nil?
+
+          clear!
+          yield delta
+        end
+      end
+
       def clear!
         metadata.clear_maintenance_payload!
       end

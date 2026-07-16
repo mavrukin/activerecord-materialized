@@ -27,11 +27,6 @@ module ActiveRecord
       def rebuild!
         Instrumentation.refresh(view_class, operation: :rebuild) do |payload|
           payload[:mode] = :full
-          # A full rebuild is idempotent (fresh snapshot + atomic swap, last writer wins) and does DDL,
-          # which implicitly commits on MySQL and so can't run inside a lock transaction. The advisory
-          # refreshing? check is best-effort dedup — a concurrent rebuild is wasteful, not wrong.
-          raise AlreadyRefreshingError, already_refreshing_message if metadata.refreshing?
-
           run_cycle(-> { perform_rebuild! })
         end
       rescue AlreadyRefreshingError
@@ -45,10 +40,7 @@ module ActiveRecord
         Instrumentation.refresh(view_class, operation: :incremental) do |payload|
           next RefreshResult.skipped(view_class) unless maintainable?
 
-          # Incremental maintenance is DML-only, so the whole cycle runs inside a real cross-process
-          # lock on the metadata row: it serializes cycles across servers and makes the non-idempotent
-          # summary-delta consume atomic. A contended cycle defers, which reconcile treats as benign.
-          with_cycle_lock { run_cycle(-> { IncrementalRefresh.new(view_class, payload).call }) }
+          run_cycle(-> { IncrementalRefresh.new(view_class, payload).call })
         end
       rescue AlreadyRefreshingError
         raise # a live cycle owns the guard; don't fail_refresh! it (that would clear the guard)
@@ -71,24 +63,9 @@ module ActiveRecord
         true
       end
 
-      # Serialize an incremental cycle across processes with a non-blocking FOR UPDATE on the
-      # metadata row. If another server already holds it, NOWAIT fails immediately (Postgres raises
-      # LockWaitTimeout; MySQL a StatementInvalid mentioning NOWAIT) and the cycle defers.
-      def with_cycle_lock(&block)
-        metadata.record.with_lock("FOR UPDATE NOWAIT", &block)
-      rescue ::ActiveRecord::LockWaitTimeout
-        raise AlreadyRefreshingError, already_refreshing_message
-      rescue ::ActiveRecord::StatementInvalid => e
-        raise unless e.message.match?(/NOWAIT/i)
-
-        raise AlreadyRefreshingError, already_refreshing_message
-      end
-
-      def already_refreshing_message
-        "#{view_class.name} is already refreshing"
-      end
-
       def run_cycle(operation)
+        raise AlreadyRefreshingError, "#{view_class.name} is already refreshing" if metadata.refreshing?
+
         started_at = monotonic_clock
         metadata.mark_refreshing!
         view_class.run_refresh_callbacks(:before_refresh)
