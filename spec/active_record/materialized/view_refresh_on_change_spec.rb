@@ -57,6 +57,11 @@ RSpec.describe ActiveRecord::Materialized::View, ".refresh_on_change" do
     expect(view_class.where(category: "books").pick(:item_count)).to eq(1)
   end
 
+  it "rejects an unknown refresh strategy at declaration time" do
+    # fail-fast: a typo'd strategy raises where it is declared, not later at the first write
+    expect { view_class.refresh_on_change(:asnyc) }.to raise_error(ArgumentError, /unknown refresh strategy :asnyc/)
+  end
+
   it "schedules refresh after an explicit transaction commits" do
     ActiveRecord::Base.transaction do
       Item.create!(category: "books", amount: 5)

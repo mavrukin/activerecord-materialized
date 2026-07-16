@@ -6,6 +6,10 @@ module ActiveRecord
     #
     # @api private
     class RefreshScheduler
+      # The refresh strategies a view may declare; the single source of truth shared by
+      # the +refresh_on_change+ DSL (fail-fast validation) and this dispatcher.
+      STRATEGIES = %i[async immediate manual].freeze
+
       class << self
         def schedule(view_class)
           # Capture the transition before marking dirty so the async dispatcher

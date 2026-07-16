@@ -16,7 +16,13 @@ module ActiveRecord
         end
 
         def refresh_on_change(strategy = :async)
-          @refresh_strategy = strategy.to_sym
+          strategy = strategy.to_sym
+          unless RefreshScheduler::STRATEGIES.include?(strategy)
+            raise ArgumentError,
+                  "unknown refresh strategy #{strategy.inspect}; expected one of #{RefreshScheduler::STRATEGIES.inspect}"
+          end
+
+          @refresh_strategy = strategy
         end
 
         def refresh_debounce(seconds)
