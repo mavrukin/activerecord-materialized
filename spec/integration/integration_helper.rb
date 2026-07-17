@@ -43,6 +43,26 @@ module IntegrationHelper
   def converged?(view)
     BenchmarkSupport::ResultComparison.converged?(view)
   end
+
+  # Release `count` connections simultaneously through the block — each on its own pooled
+  # connection, gated so they collide — and return the block's result per connection. Shared by the
+  # cross-process concurrency specs (summary-delta and scoped-recompute) so the race scaffolding
+  # lives in one place.
+  def race_connections(count)
+    gate = Queue.new
+    results = Queue.new
+    threads = Array.new(count) do
+      Thread.new do
+        ActiveRecord::Base.connection_pool.with_connection do
+          gate.pop # released together, so the connections collide
+          results << yield
+        end
+      end
+    end
+    count.times { gate << :go }
+    threads.each(&:join)
+    Array.new(count) { results.pop }
+  end
 end
 
 RSpec.configure { |config| config.include IntegrationHelper, :db_matrix }

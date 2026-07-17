@@ -28,10 +28,22 @@ module ActiveRecord
         MaintenanceDelta.deserialize(metadata.maintenance_payload)
       end
 
+      # Atomically consume the pending scoped delta under a row lock on the metadata row, so two
+      # cross-process cycles can't both consume it and recompute the same partition twice — which
+      # duplicated rows on Postgres (no unique constraint, no gap locks under READ COMMITTED). Whoever
+      # clears the payload owns the delta; a loser reads an empty payload and gets nil (a benign
+      # no-op). Returns the delta, or nil. Unlike the additive summary path (which applies inside its
+      # lock for crash-atomicity), the scoped recompute is idempotent (delete + re-aggregate), so the
+      # caller applies OUTSIDE this lock, keeping it short; a crash between consume and apply loses the
+      # delta, which self-healing reconciliation (#64) repairs on the next tick.
       def consume_pending_delta!
-        delta = pending_delta || MaintenanceDelta.full_partition
-        clear!
-        delta
+        metadata.record.with_lock do # blocking FOR UPDATE on the metadata row + a transaction
+          delta = pending_delta
+          next nil if delta.nil?
+
+          clear!
+          delta
+        end
       end
 
       # Atomically consume the pending SummaryDelta and apply it under a row lock on the metadata

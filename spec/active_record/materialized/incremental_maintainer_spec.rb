@@ -29,5 +29,18 @@ RSpec.describe ActiveRecord::Materialized::IncrementalMaintainer do
         [["books", 115], ["games", 20]]
       )
     end
+
+    # #95 — the atomic consume returns nil to a cross-process loser (a concurrent cycle already
+    # consumed the scoped delta). maintain! must no-op and report the cache's real row count, not 0.
+    it "no-ops and reports the current row count when another cycle already consumed the delta" do
+      row_count = view_class.unscoped.count # rebuilt above => books + games => 2 partitions
+      store = ActiveRecord::Materialized::MaintenanceStore.new(view_class)
+      allow(store).to receive(:consume_pending_delta!).and_return(nil) # the winner already took it
+      allow(ActiveRecord::Materialized::MaintenanceStore).to receive(:new).with(view_class).and_return(store)
+
+      result = described_class.new(view_class).maintain!(ActiveRecord::Base.connection, view_class.table_name)
+
+      expect(result).to eq(row_count) # the true total, never 0 — which would clobber metadata.row_count
+    end
   end
 end

@@ -12,10 +12,18 @@ module ActiveRecord
 
       def maintain!(_connection, _table_name)
         delta = maintenance_store.consume_pending_delta!
-        relation = resolve_maintenance_relation(delta)
+        return view_class.unscoped.count if delta.nil? # another cross-process cycle consumed it — no-op
 
+        apply_delta!(delta)
+      end
+
+      private
+
+      attr_reader :view_class
+
+      def apply_delta!(delta)
         row_count = RelationCacheWriter.new(view_class).replace_partitions!(
-          relation,
+          resolve_maintenance_relation(delta),
           key_tuples: delta.key_tuples,
           full_partition: delta.full_partition?
         )
@@ -27,10 +35,6 @@ module ActiveRecord
 
         row_count
       end
-
-      private
-
-      attr_reader :view_class
 
       def maintenance_store
         MaintenanceStore.new(view_class)
