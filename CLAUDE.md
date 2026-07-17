@@ -14,7 +14,7 @@ Follow this end-to-end flow for any non-trivial unit of work:
 2. **Branch** off `main` with a name that includes the issue number plus a short description (e.g. `17-speed-up-lefthook-scoped-checks`).
 3. **Implement.** Always add good tests. Reduce duplication, and clean things up opportunistically as you touch surrounding code.
 4. **Commit and push**, then **verify CI passes** (`.github/workflows/ci.yml`). Improve the CI itself when it's warranted.
-5. **Open a descriptive, high-standard PR** and **stop for the user to review** — do not merge.
+5. **Open a descriptive, high-standard PR** and **stop for the user to review** — do not merge. In the PR **body**, close each issue the PR resolves with a keyword: `Closes #NN` (or `Fixes`/`Resolves`). GitHub auto-closes **only** from a keyword in the body or a commit message — never from the PR title or a plain `#NN` mention — and the keyword must be **repeated per issue**: `Closes #12, closes #13` closes both; `Closes #12, #13` closes only #12.
 
 ### Pre-commit / pre-push checks are mandatory
 
