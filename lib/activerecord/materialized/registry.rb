@@ -33,8 +33,15 @@ module ActiveRecord
           all.map(&:refresh!)
         end
 
+        # Registered views that need maintenance — dirty, never refreshed, or past max_staleness.
+        # The single stale-view selection shared by the periodic refresh/reconcile paths, their
+        # rake tasks, and the job fan-out (ActiveRecord::Materialized.enqueue_stale_*!).
+        def stale_views
+          all.select(&:stale?)
+        end
+
         def refresh_stale!
-          all.select(&:stale?).map(&:refresh!)
+          stale_views.map(&:refresh!)
         end
 
         def rebuild_all!
@@ -46,7 +53,7 @@ module ActiveRecord
         end
 
         def reconcile_stale!(mode: :checksum, sample: nil)
-          all.select(&:stale?).map { |view| reconcile_view(view, mode: mode, sample: sample) }
+          stale_views.map { |view| reconcile_view(view, mode: mode, sample: sample) }
         end
 
         def warm_up_all!

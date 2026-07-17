@@ -26,11 +26,31 @@ module ActiveRecord
       # @return [Numeric] default debounce window (seconds) for coalescing async refreshes
       attr_accessor :default_refresh_debounce
 
-      # @return [Symbol] background dispatcher: +:async+ (in-process thread) or +:active_job+
-      attr_accessor :refresh_dispatcher
+      # Background dispatcher: +:active_job+ or +:async+ (in-process thread). Unset, it resolves
+      # to +:active_job+ when ActiveJob is loaded and +:async+ otherwise; an explicit assignment
+      # always wins. The in-process +:async+ dispatcher does not coordinate across processes and
+      # its queue is lost on restart, so it is single-process-only — multi-process deployments
+      # should run +:active_job+.
+      #
+      # @return [Symbol]
+      attr_writer :refresh_dispatcher
+
+      def refresh_dispatcher
+        @refresh_dispatcher || (active_job_available? ? :active_job : :async)
+      end
 
       # @return [Symbol] ActiveJob queue name used when +refresh_dispatcher+ is +:active_job+
       attr_accessor :refresh_queue_name
+
+      # ActiveJob queue for {ReconcileJob} (the reconcile fan-out); falls back to
+      # +refresh_queue_name+ when unset so both maintenance jobs share a queue by default.
+      #
+      # @return [Symbol]
+      attr_writer :reconcile_queue_name
+
+      def reconcile_queue_name
+        @reconcile_queue_name || refresh_queue_name
+      end
 
       # Cold-read behavior: :read_through (serve from source), :serve_stale
       # (serve the cache as-is), or :raise.
@@ -71,9 +91,18 @@ module ActiveRecord
         @atomic_swap_refresh = true
         @default_refresh_strategy = :async
         @default_refresh_debounce = 2
-        @refresh_dispatcher = :async
+        # @refresh_dispatcher intentionally unset — lazily resolved from ActiveJob availability.
         @refresh_queue_name = :materialized_views
         @default_cold_read_strategy = :read_through
+      end
+
+      # Whether ActiveJob is loaded — the single source of truth for the dispatcher default and
+      # the module's dispatch/enqueue guards. Extracted (rather than an inline +defined?+) so it is
+      # testable regardless of whether the host app pulled in ActiveJob.
+      #
+      # @return [Boolean]
+      def active_job_available?
+        !defined?(ActiveJob::Base).nil?
       end
     end
   end

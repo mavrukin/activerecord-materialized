@@ -79,13 +79,13 @@ RSpec.describe GettingStartedTutorial, :integration do
     around do |example|
       previous_adapter = ActiveJob::Base.queue_adapter
       ActiveJob::Base.queue_adapter = :test
-      config = ActiveRecord::Materialized.configuration
-      previous_dispatcher = config.refresh_dispatcher
-      config.refresh_dispatcher = :active_job
       example.run
-      config.refresh_dispatcher = previous_dispatcher
       ActiveJob::Base.queue_adapter = previous_adapter
     end
+
+    # Override the outer context's :async pin — this section demonstrates the ActiveJob worker.
+    # A before hook (not the around) so it runs after the outer before that pins :async.
+    before { ActiveRecord::Materialized.configuration.refresh_dispatcher = :active_job }
 
     it "refreshes itself in the background after a write — no manual refresh" do
       region_revenue.rebuild!(confirm: true)

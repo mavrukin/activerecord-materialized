@@ -201,8 +201,10 @@ That window between the write and the refresh is the same eventual-consistency
 trade-off as PostgreSQL's `REFRESH MATERIALIZED VIEW CONCURRENTLY` — reads are
 always fast and always correct-as-of the last refresh.
 
-**Who runs the refresh?** By default, a debounced in-process background thread. In
-production, point it at your job queue so the work runs on your workers:
+**Who runs the refresh?** By default it auto-resolves: `:active_job` when ActiveJob is
+loaded (so the work runs on your job workers), otherwise a debounced in-process thread.
+Set it explicitly to be sure — and for multiple app servers, see the
+[distributed deployment guide](distributed-deployment.md):
 
 ```ruby
 # config/initializers/activerecord_materialized.rb

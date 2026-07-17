@@ -241,7 +241,7 @@ This gem applies decades of materialized-view and incremental-maintenance resear
 | **Full refresh escape hatch** | `rebuild!(confirm: true)` (or `refresh_mode :full`) rebuilds via atomic swap — use for recovery or non-maintainable views. `refresh!` is always incremental and never rebuilds. |
 | **Table-name-only `depends_on`** | Symbol/string table names work, but callback-based refresh-on-write requires a resolvable ActiveRecord model for that table. Raw SQL writes bypass callbacks — feed them through the ingestion API (see [Change sources](#change-sources)). |
 | **SQLite vs MySQL in dev** | The benchmark uses SQLite. Production behavior is adapter-agnostic, but test atomic swap on your target database. |
-| **In-process async default** | Default `refresh_dispatcher: :async` uses a background thread. **Use ActiveJob in production** so refresh work runs on job workers, not Puma threads. |
+| **Dispatcher at scale** | `refresh_dispatcher` auto-resolves to `:active_job` when ActiveJob is loaded, else the in-process `:async` thread (single-process-only; warned at boot). Multi-server deployments should confirm `:active_job` and run the periodic backstop from **one** owner — see [distributed deployment](docs/distributed-deployment.md). |
 | **No automatic indexes** | Cache tables are created from query results. Add indexes on cache columns you filter/sort on. |
 | **Storage** | Cache tables duplicate data. Plan disk usage accordingly. |
 | **Nested transactions** | Refresh is scheduled on the transaction where the write occurred; rollback clears pending refreshes for that transaction. |
@@ -738,8 +738,12 @@ bin/rails materialized:rebuild         # intentional full materialization (in-DB
 bin/rails materialized:verify          # raise on cache-table schema drift
 bin/rails materialized:audit           # raise on data drift (contents vs. source)
 bin/rails materialized:reconcile       # verify stale views and repair drift (scoped); for cron/ActiveJob
+bin/rails materialized:enqueue_refreshes    # fan out: one RefreshJob per stale view (run from one owner)
+bin/rails materialized:enqueue_reconciles   # fan out: one ReconcileJob per stale view (run from one owner)
 bin/rails materialized:warm_up         # materialize configured warm_up partitions
 ```
+
+For hundreds of app servers, use the `enqueue_*` fan-out tasks from a single scheduled owner instead of running `reconcile`/`refresh_stale` as cron on every box — see [distributed deployment](docs/distributed-deployment.md).
 
 ---
 

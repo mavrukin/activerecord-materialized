@@ -106,6 +106,46 @@ module ActiveRecord
         Registry.reconcile_stale!(mode: mode, sample: sample)
       end
 
+      # Fans the periodic reconcile backstop across an ActiveJob fleet: enqueues one
+      # {ReconcileJob} per stale, materialized view so many workers share the (expensive) drift
+      # verification instead of one process running it serially. Run it from a SINGLE owner —
+      # a leader, a dedicated instance, or one recurring job — never as cron on every server (see
+      # the distributed-deployment guide). Requires ActiveJob; without it, use {reconcile_stale!}.
+      #
+      # @param mode [Symbol] drift-check depth passed to each job (+:row_count+/+:checksum+/+:full+)
+      # @param sample [Numeric, nil] verify a random subset (Integer count / Float fraction)
+      # @return [Array<String>] the view keys enqueued
+      def enqueue_stale_reconciles!(mode: :checksum, sample: nil)
+        enqueue_for_each_stale_view(:enqueue_stale_reconciles!) do |view_class|
+          ReconcileJob.perform_later(view_class.view_key, mode: mode, sample: sample)
+        end
+      end
+
+      # The fan-out form of the serial {Registry.refresh_stale!}: enqueues one {RefreshJob} per
+      # stale, materialized view. Same single-owner rule as {enqueue_stale_reconciles!}. Requires ActiveJob.
+      #
+      # @return [Array<String>] the view keys enqueued
+      def enqueue_stale_refreshes!
+        enqueue_for_each_stale_view(:enqueue_stale_refreshes!) do |view_class|
+          RefreshJob.perform_later(view_class.view_key)
+        end
+      end
+
+      # Logged once at boot (see {Railtie}) when ActiveJob is available but the effective dispatcher
+      # is still the in-process refresher — it does not coordinate across processes, so it is a
+      # correctness/efficiency hazard in a multi-process deployment. Silent when dispatching via
+      # ActiveJob, and silent when ActiveJob isn't loaded at all (a genuinely single-process app,
+      # for which the in-process refresher is the right and only choice).
+      #
+      # @param logger [#warn, nil] destination (defaults to the Rails logger)
+      # @return [void]
+      def warn_if_in_process_dispatcher!(logger: default_logger)
+        return unless configuration.active_job_available?
+        return if configuration.refresh_dispatcher == :active_job
+
+        logger&.warn(IN_PROCESS_DISPATCHER_WARNING)
+      end
+
       # Publishes a committed dependency write from a custom change source (a
       # CDC/replication stream, a bulk loader, another service). It drives the
       # externally-fed views (`change_source :none`) that depend on the table;
@@ -169,6 +209,28 @@ module ActiveRecord
 
       private
 
+      # Enqueues one job per stale, *materialized* view and returns their keys. Cold views read
+      # through and aren't maintained, so a job for one would only no-op every tick — skip them.
+      def enqueue_for_each_stale_view(method_name)
+        require_active_job!(method_name)
+        Registry.stale_views.select(&:materialized?).map do |view_class|
+          yield view_class
+          view_class.view_key
+        end
+      end
+
+      def require_active_job!(method_name)
+        return if configuration.active_job_available?
+
+        raise NotImplementedError,
+              "#{method_name} requires ActiveJob — load it and set config.refresh_dispatcher = " \
+              ":active_job, or run the in-process reconcile_stale! / Registry.refresh_stale! instead."
+      end
+
+      def default_logger
+        Rails.logger if defined?(Rails) && Rails.respond_to?(:logger)
+      end
+
       def data_drift_message(results)
         summary = results.map do |result|
           "#{result.view_name} (#{result.missing_keys.size} missing, " \
@@ -177,5 +239,12 @@ module ActiveRecord
         "materialized view data drift detected: #{summary.join('; ')}"
       end
     end
+
+    # Guidance logged when the in-process dispatcher is active in a possibly multi-process
+    # deployment. Private — internal wording, not a public contract.
+    IN_PROCESS_DISPATCHER_WARNING =
+      "[activerecord-materialized] refresh_dispatcher is :async: the in-process refresher is " \
+      "single-process-only (queue lost on restart). Use config.refresh_dispatcher = :active_job for multiple servers."
+    private_constant :IN_PROCESS_DISPATCHER_WARNING
   end
 end

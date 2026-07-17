@@ -49,6 +49,12 @@ RSpec.configure do |config|
   end
 
   config.before(:each) do
+    # Deterministic dispatch default for the suite: the in-process refresher, which the specs
+    # drive via AsyncRefresher.flush!/pause. (The gem's real default auto-resolves to :active_job
+    # when ActiveJob is loaded — which it is here — so without this pin, writes would fan out to
+    # background job threads and race the assertions.) The :active_job specs opt in with their own
+    # `before`, which runs after this one.
+    ActiveRecord::Materialized.configuration.refresh_dispatcher = :async
     ActiveRecord::Materialized::AsyncRefresher.reset!
     ActiveRecord::Materialized::AsyncRefresher.paused = false
     unless RSpec.current_example.metadata[:benchmark] || RSpec.current_example.metadata[:db_matrix]
