@@ -33,4 +33,20 @@ RSpec.describe ActiveRecord::Materialized::Metadata do
 
     expect(ActiveRecord::Materialized::Metadata::Schema).to have_received(:ensure_table!).once
   end
+
+  # #94 — a replica read trails the primary, so the replica-lag budget tightens max_staleness.
+  describe "#stale? with a replica-lag budget" do
+    let(:view_class) { define_view("mv_replica_lag", :item_id_sample) { max_staleness 1.hour } }
+
+    after { ActiveRecord::Materialized.configuration.replica_lag = 0 }
+
+    it "goes stale sooner by the configured replica-lag budget" do
+      metadata.record.update!(last_refreshed_at: 40.minutes.ago, dirty: false)
+
+      expect(metadata.stale?).to be(false) # 40 min old, inside the 1-hour window => fresh by default
+
+      ActiveRecord::Materialized.configuration.replica_lag = 30.minutes # effective window => 30 min
+      expect(metadata.stale?).to be(true) # 40 min old now exceeds it
+    end
+  end
 end

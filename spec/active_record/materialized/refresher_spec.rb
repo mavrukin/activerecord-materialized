@@ -36,6 +36,15 @@ RSpec.describe ActiveRecord::Materialized::Refresher do
       described_class.new(view_class).rebuild!
       expect(events).to eq(%i[before after])
     end
+
+    # #94 — maintenance writes route to the primary via the maintenance role when one is configured.
+    it "runs the cycle under the maintenance connection role" do
+      allow(ActiveRecord::Materialized::ConnectionRouting).to receive(:maintenance).and_call_original
+
+      described_class.new(view_class).rebuild!
+
+      expect(ActiveRecord::Materialized::ConnectionRouting).to have_received(:maintenance)
+    end
   end
 
   describe "#refresh!" do

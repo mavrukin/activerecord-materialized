@@ -67,10 +67,12 @@ module ActiveRecord
         return true if last_refreshed_at.nil?
         return false if max_staleness.nil?
 
-        # A reconcile verifies contents against the source, so it resets the staleness
-        # clock like a refresh — measure age from whichever happened later.
+        # A reconcile verifies contents against the source, so it resets the staleness clock like a
+        # refresh — measure age from whichever happened later. The replica-lag budget tightens the
+        # window: a replica read trails the primary by the lag, so the view goes stale that much
+        # sooner to keep replica reads within max_staleness.
         freshest = [last_refreshed_at, record.last_reconciled_at].compact.max_by(&:to_time)
-        freshest.to_time < Timestamps.threshold(max_staleness).to_time
+        freshest.to_time < Timestamps.threshold(effective_staleness(max_staleness)).to_time
       end
 
       def mark_dirty!
@@ -113,6 +115,17 @@ module ActiveRecord
           refreshing: false,
           last_error: error.message
         )
+      end
+
+      private
+
+      # max_staleness minus the configured replica-lag budget (clamped at 0), so replica reads stay
+      # within the window. Zero lag (the default) leaves max_staleness unchanged.
+      def effective_staleness(max_staleness)
+        lag = ActiveRecord::Materialized.configuration.replica_lag
+        return max_staleness if lag.nil? || lag.zero?
+
+        [max_staleness - lag, 0].max
       end
     end
   end

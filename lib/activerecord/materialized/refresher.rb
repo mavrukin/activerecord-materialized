@@ -25,30 +25,39 @@ module ActiveRecord
 
       # Full materialization — the only path that scans all base data.
       def rebuild!
-        Instrumentation.refresh(view_class, operation: :rebuild) do |payload|
-          payload[:mode] = :full
-          run_cycle(-> { perform_rebuild! })
+        guarded_maintenance do
+          Instrumentation.refresh(view_class, operation: :rebuild) do |payload|
+            payload[:mode] = :full
+            run_cycle(-> { perform_rebuild! })
+          end
         end
-      rescue AlreadyRefreshingError
-        raise # a live cycle owns the guard; don't fail_refresh! it (that would clear the guard)
-      rescue StandardError => e
-        fail_refresh!(e)
       end
 
       # Incremental maintenance only; a no-op when the view is not maintainable.
       def refresh!
-        Instrumentation.refresh(view_class, operation: :incremental) do |payload|
-          next RefreshResult.skipped(view_class) unless maintainable?
+        guarded_maintenance do
+          Instrumentation.refresh(view_class, operation: :incremental) do |payload|
+            next RefreshResult.skipped(view_class) unless maintainable?
 
-          run_cycle(-> { IncrementalRefresh.new(view_class, payload).call })
+            run_cycle(-> { IncrementalRefresh.new(view_class, payload).call })
+          end
         end
-      rescue AlreadyRefreshingError
-        raise # a live cycle owns the guard; don't fail_refresh! it (that would clear the guard)
-      rescue StandardError => e
-        fail_refresh!(e)
       end
 
       private
+
+      # Runs a maintenance cycle under the configured writer role, translating an overlap into a
+      # benign re-raise (a live cycle owns the guard) and any other failure into fail_refresh!. The
+      # rescue lives inside the routed connection so fail_refresh!'s write also lands on the writer.
+      def guarded_maintenance
+        ConnectionRouting.maintenance do
+          yield
+        rescue AlreadyRefreshingError
+          raise # a live cycle owns the guard; don't fail_refresh! it (that would clear the guard)
+        rescue StandardError => e
+          fail_refresh!(e)
+        end
+      end
 
       def maintainable?
         return false unless view_class.incrementally_maintainable?

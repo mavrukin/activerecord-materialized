@@ -408,6 +408,11 @@ ActiveRecord::Materialized.configure do |config|
   config.atomic_swap_refresh = true
   config.max_tracked_partitions = 1_000             # collapse to a full recompute past this
   config.metadata_table_name = "ar_materialized_view_metadata"
+
+  # Writer/replica topology (see the distributed-deployment guide) — all default to off:
+  config.maintenance_role = :writing   # route refresh/reconcile/rebuild to the primary
+  config.verification_role = :reading  # offload DataVerifier reads to a replica
+  config.replica_lag = 0               # replication-lag budget folded into staleness
 end
 ```
 

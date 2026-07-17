@@ -10,6 +10,7 @@ require "securerandom"
 
 require_relative "materialized/change_source"
 require_relative "materialized/configuration"
+require_relative "materialized/connection_routing"
 require_relative "materialized/module_api"
 require_relative "materialized/refresh_callbacks"
 require_relative "materialized/write_change"

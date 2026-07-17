@@ -14,6 +14,12 @@ RSpec.describe ActiveRecord::Materialized::Configuration do
     expect(config.reconcile_queue_name).to eq(:materialized_views) # falls back to the refresh queue
   end
 
+  it "defaults to no writer/replica routing or replica-lag budget (#94)" do
+    expect(config.maintenance_role).to be_nil # no routing unless the app configures the roles
+    expect(config.verification_role).to be_nil
+    expect(config.replica_lag).to eq(0)
+  end
+
   it "yields the global configuration to the configure block" do
     yielded = nil
     ActiveRecord::Materialized.configure { |yielded_config| yielded = yielded_config }
