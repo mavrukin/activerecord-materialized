@@ -83,10 +83,10 @@ module IntegrationSchema
   # #84 concurrency view: callback-fed, scoped-recompute (MAX is non-distributive, so
   # the view can't take the additive summary-delta path), integer-exact — converges
   # under concurrent cross-process maintenance.
-  def define_scoped_view(table_name)
+  def define_scoped_view(table_name, &config)
     build_view(
       table_name, :arm_line_items,
-      changes: :callbacks, source: -> { IntegrationSchema.line_item_scoped_metrics }
+      changes: :callbacks, source: -> { IntegrationSchema.line_item_scoped_metrics }, &config
     )
   end
 

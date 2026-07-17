@@ -30,9 +30,9 @@ module ActiveRecord
           # can't apply it twice; a loser finds an empty payload and no-ops. The row count is read
           # after the lock releases (keeping the full-table COUNT out of the critical section) and
           # reflects the cache's true total for winner and loser alike — never 0, which would
-          # clobber a populated view's row_count. The scoped path below is idempotent under
-          # serialized execution; a concurrent double-run is wasteful and, on Postgres, can
-          # duplicate a brand-new partition's rows — a known scoped-path gap tracked in #95.
+          # clobber a populated view's row_count. The scoped path below serializes its own consume
+          # (MaintenanceStore#consume_pending_delta! takes the same row lock, #95), so a concurrent
+          # cross-process double-run recomputes a partition once rather than duplicating its rows.
           store.with_consumed_summary_delta { |delta| DeltaMaintainer.new(@view_class).apply!(delta) }
           return @view_class.unscoped.count
         end
