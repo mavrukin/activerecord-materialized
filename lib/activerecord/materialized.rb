@@ -59,6 +59,9 @@ require_relative "materialized/reconciler"
 require_relative "materialized/partition_record"
 require_relative "materialized/partition_state"
 
-require_relative "materialized/refresh_job" if defined?(ActiveJob::Base)
+if defined?(ActiveJob::Base)
+  require_relative "materialized/refresh_job"
+  require_relative "materialized/reconcile_job"
+end
 
 require_relative "materialized/railtie" if defined?(Rails::Railtie)

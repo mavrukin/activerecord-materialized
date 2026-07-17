@@ -11,17 +11,15 @@ RSpec.describe ActiveRecord::Materialized::RefreshScheduler do
     around do |example|
       previous_adapter = ActiveJob::Base.queue_adapter
       ActiveJob::Base.queue_adapter = :test
-      config = ActiveRecord::Materialized.configuration
-      previous_dispatcher = config.refresh_dispatcher
-      config.refresh_dispatcher = :active_job
       example.run
-      config.refresh_dispatcher = previous_dispatcher
       ActiveJob::Base.queue_adapter = previous_adapter
     end
 
     let(:enqueued) { ActiveJob::Base.queue_adapter.enqueued_jobs }
 
     before do
+      # Opt into :active_job here (not the around) so it runs after spec_helper's :async default.
+      ActiveRecord::Materialized.configuration.refresh_dispatcher = :active_job
       seed_items(["books", 1], ["games", 2])
       view_class.rebuild!(confirm: true) # warm + clean, so a write transitions it to dirty
     end

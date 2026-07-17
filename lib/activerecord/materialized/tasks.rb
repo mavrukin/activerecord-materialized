@@ -7,10 +7,12 @@ module ActiveRecord
       DEFINITIONS = {
         refresh_all: "Refresh all registered materialized views",
         refresh_stale: "Refresh stale materialized views",
+        enqueue_refreshes: "Enqueue a background RefreshJob per stale view (fleet fan-out; run from one owner)",
         rebuild: "Rebuild (fully materialize) all registered materialized views",
         verify: "Verify materialized view cache tables match their source relations",
         audit: "Verify materialized view contents against their source relations (data drift)",
         reconcile: "Reconcile stale materialized views: verify contents and repair drift (scoped)",
+        enqueue_reconciles: "Enqueue a background ReconcileJob per stale view (fleet fan-out; run from one owner)",
         warm_up: "Materialize each view's configured warm_up partitions"
       }.freeze
 
@@ -37,7 +39,7 @@ module ActiveRecord
       end
 
       def self.run_refresh_stale!
-        stale = Registry.all.select(&:stale?)
+        stale = Registry.stale_views
         stale.each(&:refresh!)
         Rails.logger.debug { "Refreshed #{stale.size} stale materialized view(s)." }
       end
@@ -64,6 +66,16 @@ module ActiveRecord
         Rails.logger.debug do
           "Reconciled #{results.size} stale view(s); repaired #{repaired} partition(s); #{failed} failed."
         end
+      end
+
+      def self.run_enqueue_refreshes!
+        keys = ActiveRecord::Materialized.enqueue_stale_refreshes!
+        Rails.logger.debug { "Enqueued #{keys.size} refresh job(s) for stale view(s)." }
+      end
+
+      def self.run_enqueue_reconciles!
+        keys = ActiveRecord::Materialized.enqueue_stale_reconciles!
+        Rails.logger.debug { "Enqueued #{keys.size} reconcile job(s) for stale view(s)." }
       end
 
       def self.run_warm_up!

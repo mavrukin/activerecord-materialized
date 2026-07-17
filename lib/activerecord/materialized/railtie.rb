@@ -8,6 +8,12 @@ module ActiveRecord
         require_relative "tasks"
         Tasks.define!
       end
+
+      # After the host's initializers have run (so config.refresh_dispatcher is final),
+      # warn if the in-process refresher is active — it is single-process-only.
+      config.after_initialize do
+        ActiveRecord::Materialized.warn_if_in_process_dispatcher!
+      end
     end
   end
 end
