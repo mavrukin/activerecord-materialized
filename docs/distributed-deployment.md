@@ -75,3 +75,60 @@ entry points are the fan-out primitive it plugs into.
 
 Without ActiveJob, `enqueue_stale_*!` raise; use the serial in-process
 `ActiveRecord::Materialized.reconcile_stale!` / `Registry.refresh_stale!` instead (single-process).
+
+## 3. Route maintenance to the primary, verification to a replica
+
+All maintenance (`refresh!`, `reconcile!`, `rebuild!`) is a **write** and must run on the primary.
+The expensive half of reconciliation — `DataVerifier` recomputing the source aggregation — is a
+**read** that can be offloaded to a replica. The natural split is **verify-on-replica,
+repair-on-primary**.
+
+Declare your roles with Rails multi-database `connects_to`, then point the gem at them:
+
+```ruby
+# config/initializers/activerecord_materialized.rb
+ActiveRecord::Materialized.configure do |config|
+  config.maintenance_role  = :writing  # refresh/reconcile/rebuild run here (the primary)
+  config.verification_role  = :reading # DataVerifier reads run here (a replica)
+end
+```
+
+Each is wrapped in `ActiveRecord::Base.connected_to(role:)` only when set; the default (`nil`) leaves
+every operation on the current connection, so single-database apps — and apps relying on Rails'
+automatic role switching — are unaffected. `reconcile!` composes the two: it verifies under the
+reading role and repairs under the writing role, via `connected_to` nesting.
+
+## 4. Consistent-snapshot verification
+
+`DataVerifier` reads the cache and the recomputed source **inside one transaction**
+(`REPEATABLE READ` where the adapter supports it), so both sides come from a single snapshot. Without
+that, a write landing between the two reads — or replication lag, when reads are pinned to a replica —
+makes consistent data look like drift and triggers a needless repair. The single snapshot eliminates
+that false positive. (A brand-new partition that genuinely appears after the snapshot is simply caught
+on the next verification pass.)
+
+The snapshot is held for the whole verification (a full source recompute). For a **large** view, set
+`verification_role` (above) so that snapshot lives on a replica — on the primary, a long-held
+`REPEATABLE READ` snapshot delays `VACUUM` (Postgres) / undo purge (MySQL).
+
+## 5. Account for replication lag in freshness
+
+A view read from a replica trails the primary, so its **effective freshness is
+`view staleness + replication lag`**. Budget for it:
+
+```ruby
+config.replica_lag = 5.seconds  # folded into time-based staleness
+```
+
+`stale?` then tightens the window — a view goes stale `replica_lag` sooner — so replica reads stay
+within `max_staleness`. Set your reconcile interval accordingly:
+
+```
+worst-case staleness ≈ reconcile interval + max_staleness + replication lag
+```
+
+**Caveat.** `replica_lag` is a *static* estimate of a *dynamic* quantity, and `stale?` runs against
+the primary's metadata, not on the replica where the lagging read happens — so treat it as a
+conservative budget, not a measurement. Keep it **below your smallest `max_staleness`**: at or above
+it the effective window is zero, so the view is *always* stale and gets reconciled every tick. Leave
+it at `0` (the default) if you read views from the primary or your lag is negligible.

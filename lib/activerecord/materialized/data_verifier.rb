@@ -32,7 +32,34 @@ module ActiveRecord
       end
 
       def verify
+        # verifiable? reads metadata/schema (and may provision the metadata table on first use), so it
+        # runs on the ambient/primary connection — never the read-only replica. Only the cache-vs-source
+        # comparison is routed to the verification role, inside one snapshot.
         return empty_result unless verifiable?
+
+        ConnectionRouting.verification { in_consistent_snapshot { verify_within_snapshot } }
+      end
+
+      private
+
+      # Read the cache and the recomputed source inside one transaction, so both sides come from a
+      # single snapshot: a write landing mid-verify — or replication lag, when reads are pinned to a
+      # replica — can't make consistent data look like drift. SQLite has no explicit isolation levels
+      # (and its single-writer model already reads consistently), and an already-open transaction
+      # can't raise its level, so both fall back to a plain transaction.
+      def in_consistent_snapshot(&block)
+        @view_class.transaction(isolation: snapshot_isolation, &block)
+      end
+
+      def snapshot_isolation
+        connection = @view_class.connection
+        return nil if connection.open_transactions.positive? # can't raise isolation in a nested transaction
+        return nil if connection.adapter_name.match?(/sqlite/i) # /sqlite/i: SQLite has no explicit isolation levels
+
+        :repeatable_read
+      end
+
+      def verify_within_snapshot
         return verify_exhaustive if @sample.nil?
 
         keys = cache_partition_keys
@@ -42,8 +69,6 @@ module ActiveRecord
 
         verify_sampled(Array(keys.sample(size)), keys.size)
       end
-
-      private
 
       # Compares every partition, so it detects missing, extra, and mismatched.
       def verify_exhaustive

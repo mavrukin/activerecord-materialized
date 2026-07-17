@@ -52,6 +52,30 @@ module ActiveRecord
         @reconcile_queue_name || refresh_queue_name
       end
 
+      # Rails multi-database role that maintenance writes (refresh/reconcile/rebuild) run under, so
+      # they target the primary in a writer/replica topology. +nil+ (default) yields on the current
+      # connection — no routing. Requires the host app to have declared the role via +connects_to+.
+      #
+      # @return [Symbol, nil]
+      attr_accessor :maintenance_role
+
+      # Rails multi-database role that {DataVerifier} reads run under, so the (expensive) drift
+      # verification can be offloaded to a replica — the verify-on-replica / repair-on-primary split.
+      # +nil+ (default) yields on the current connection.
+      #
+      # @return [Symbol, nil]
+      attr_accessor :verification_role
+
+      # Replication lag budget folded into time-based staleness: a view read from a replica is
+      # effectively `view staleness + replication lag` stale, so this tightens the effective
+      # +max_staleness+ (a view goes stale this much sooner) to keep replica reads within budget.
+      # Keep it well below your smallest +max_staleness+ — a value at or above it drives the effective
+      # window to zero, making that view perpetually stale (reconciled every tick). Defaults to 0 (no
+      # adjustment); a static estimate of a dynamic quantity — see the distributed-deployment guide.
+      #
+      # @return [Numeric, ActiveSupport::Duration]
+      attr_accessor :replica_lag
+
       # Cold-read behavior: :read_through (serve from source), :serve_stale
       # (serve the cache as-is), or :raise.
       attr_accessor :default_cold_read_strategy
@@ -94,6 +118,7 @@ module ActiveRecord
         # @refresh_dispatcher intentionally unset — lazily resolved from ActiveJob availability.
         @refresh_queue_name = :materialized_views
         @default_cold_read_strategy = :read_through
+        @replica_lag = 0
       end
 
       # Whether ActiveJob is loaded — the single source of truth for the dispatcher default and

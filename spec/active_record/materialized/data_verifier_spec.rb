@@ -20,6 +20,15 @@ RSpec.describe ActiveRecord::Materialized::DataVerifier do
     expect(result.total_partition_count).to eq(3)
   end
 
+  # #94 — verification reads route to a replica via the verification role when one is configured.
+  it "runs verification under the verification connection role" do
+    allow(ActiveRecord::Materialized::ConnectionRouting).to receive(:verification).and_call_original
+
+    described_class.new(view, mode: :full).verify
+
+    expect(ActiveRecord::Materialized::ConnectionRouting).to have_received(:verification)
+  end
+
   it "detects a corrupted partition value in full mode" do
     view.unscoped.find_by(category: "books").update!(item_count: 999)
 

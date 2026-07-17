@@ -24,18 +24,23 @@ module ActiveRecord
       end
 
       def reconcile!
-        divergent = []
-        return emit(build) unless @view_class.materialized? # cold view: no cache to verify or repair
+        # Route the whole cycle to the writer so the repair writes (merge!/mark_reconciled!/refresh!)
+        # land on the primary; DataVerifier.verify nests its own reading role, so verification still
+        # reads from the replica while repair stays on the primary.
+        ConnectionRouting.maintenance do
+          divergent = []
+          next emit(build) unless @view_class.materialized? # cold view: no cache to verify or repair
 
-        @view_class.refresh! # drain pending maintenance so any remaining drift is genuine
-        divergent = detect_drift
-        repair!(divergent) unless divergent.empty?
-        mark_reconciled!(divergent)
-        emit(build(repaired_keys: divergent))
-      rescue Refresher::AlreadyRefreshingError
-        # A live refresh owns the cycle; the scoped repair we queued (if any) drains on
-        # that cycle or the next tick. Defer without corrupting or double-maintaining.
-        emit(build(repaired_keys: divergent || [], deferred: true))
+          @view_class.refresh! # drain pending maintenance so any remaining drift is genuine
+          divergent = detect_drift
+          repair!(divergent) unless divergent.empty?
+          mark_reconciled!(divergent)
+          emit(build(repaired_keys: divergent))
+        rescue Refresher::AlreadyRefreshingError
+          # A live refresh owns the cycle; the scoped repair we queued (if any) drains on
+          # that cycle or the next tick. Defer without corrupting or double-maintaining.
+          emit(build(repaired_keys: divergent || [], deferred: true))
+        end
       end
 
       private
