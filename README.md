@@ -533,6 +533,19 @@ end
   `key_attributes`); a lone after-image can't identify the old partition, so it
   safely widens rather than under-scoping (relevant for minimal-image binlogs).
 
+**Decoding a log-based CDC envelope.** A log-based CDC platform (Debezium / Maxwell /
+Kafka Connect, reading the MySQL binlog or Postgres WAL) emits a change envelope that
+maps directly onto this call: `op` `c`/`u`/`d`/`r` → `:create`/`:update`/`:destroy`
+(a snapshot `r` → `:create`), the `before`/`after` row images → `before:`/`after:`, and
+`source.table` → `table:`. Capturing the **old-image** partition key on an update or
+delete requires **full row images** — MySQL `binlog-row-image=FULL` and Postgres
+`REPLICA IDENTITY FULL` — otherwise only the primary key is logged and a
+partition-moving change can't identify the old partition, so it widens to a full
+recompute. This path is integration-tested by decoding a real `test_decoding` logical
+slot (Postgres) and a real ROW binlog (MySQL) and asserting the view converges — so the
+ingestion API is verified against what an actual CDC consumer emits, not a synthesized
+descriptor (see [integration testing](docs/integration-testing.md)).
+
 CDC composes with callbacks (use callbacks for in-app writes and CDC for the write
 paths they miss) as long as each view has a single source: give CDC-fed views
 `change_source :none`.
