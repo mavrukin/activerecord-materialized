@@ -54,7 +54,7 @@ bundle exec rspec path/to/foo_spec.rb            # single file
 bundle exec rspec path/to/foo_spec.rb:42         # single example by line
 bin/affected-specs <files...>   # print specs affected by changed files (mapping logic, see below)
 
-bundle exec rubocop lib/ bin/ --parallel         # lint (CI scope)
+bundle exec rubocop --parallel                   # lint the whole project (CI scope; per .rubocop.yml)
 ```
 
 Benchmarks (JOB-schema SQLite, see `benchmark/DATA.md`):

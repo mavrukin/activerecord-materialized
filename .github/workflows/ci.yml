@@ -31,7 +31,9 @@ jobs:
           bundler-cache: true
 
       - name: Run RuboCop
-        run: bundle exec rubocop lib/ bin/ --parallel
+        # Whole project (specs, Rakefile, gemspec, …) via .rubocop.yml, not just lib/ bin/, so CI is
+        # a real backstop for spec offenses — not only the (bypassable) pre-commit hook.
+        run: bundle exec rubocop --parallel
 
   test:
     name: RSpec

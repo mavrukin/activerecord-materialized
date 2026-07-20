@@ -15,12 +15,12 @@ group :development, :test do
   gem "lefthook", "~> 1.10"
   gem "railties", ">= 8.0"
   gem "rake", "~> 13.0"
+  gem "redcarpet", "~> 3.6", require: false
   gem "rspec", "~> 3.13"
   gem "rubocop", "~> 1.75", require: false
   gem "rubocop-performance", "~> 1.25", require: false
   gem "rubocop-rails", "~> 2.31", require: false
   gem "rubocop-rspec", "~> 3.5", require: false
-  gem "redcarpet", "~> 3.6", require: false
   gem "sqlite3", "~> 2.1"
   gem "yard", "~> 0.9", require: false
 end
