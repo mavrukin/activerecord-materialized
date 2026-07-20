@@ -13,8 +13,8 @@ pre-commit:
 pre-push:
   commands:
     rubocop:
-      glob: "{lib/**/*.rb,bin/**}"
-      run: bundle exec rubocop lib/ bin/ --parallel
+      glob: "{**/*.{rb,rake},*.gemspec,Gemfile}"
+      run: bundle exec rubocop --parallel
     rspec:
       glob: "{lib/**/*.rb,spec/**/*_spec.rb,spec/spec_helper.rb,spec/support/**}"
       run: bin/hook-rspec {push_files}

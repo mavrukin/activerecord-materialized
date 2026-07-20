@@ -4,7 +4,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 echo "==> RuboCop"
-bundle exec rubocop lib/ bin/ --parallel
+# Lint the whole project (specs, Rakefile, gemspec, top-level scripts) per .rubocop.yml's
+# Include/Exclude — not just lib/ bin/ — so a spec offense can't pass this "full local gate".
+bundle exec rubocop --parallel
 
 # Mirror CI (.github/workflows/ci.yml): the heavy benchmark integration
 # spec leaks state across the random-ordered suite, so CI runs the fast
