@@ -41,13 +41,9 @@ module ActiveRecord
         yield(configuration)
       end
 
-      def metadata_table_name
-        configuration.metadata_table_name
-      end
+      def metadata_table_name = configuration.metadata_table_name
 
-      def partition_table_name
-        configuration.partition_table_name
-      end
+      def partition_table_name = configuration.partition_table_name
 
       # Verifies every registered view's cache table still matches the columns its
       # source relation projects — run it at boot or in CI to catch a view whose
@@ -199,6 +195,22 @@ module ActiveRecord
             key_attributes: key_attributes, before: before, after: after
           )
         )
+      end
+
+      # Relay one Debezium CDC change envelope through {#ingest_change} — mapping +op+ (c/r → create,
+      # u → update, d → destroy), the +before+/+after+ row images, and +source.table+ for you (a nested
+      # +payload+ is unwrapped). A +nil+ envelope (a Kafka tombstone) is a no-op; a non-tombstone with
+      # no +op+, or an unsupported +op+, raises. Pass +table+ to override the target when it differs
+      # from +source.table+. +table+ is positional (not a keyword) so an inline envelope literal is not
+      # misparsed as keyword arguments. See {DebeziumEnvelope} and the CDC section of the README.
+      #
+      # @param envelope [Hash, nil] a decoded Debezium change event value (string or symbol keys)
+      # @param table [String, Symbol, nil] target-table override; defaults to +source.table+
+      # @return [void]
+      # @raise [ArgumentError] on a mis-shaped envelope, an unsupported +op+, or an undeterminable table
+      def ingest_debezium_change(envelope, table = nil)
+        descriptor = DebeziumEnvelope.to_change_descriptor(envelope, table)
+        ingest_change(**descriptor) if descriptor
       end
 
       # Relay pending {WriteOutbox} rows (captured by database triggers for out-of-band writes)
