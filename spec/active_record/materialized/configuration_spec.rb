@@ -6,8 +6,12 @@ require "active_job" # so the unset dispatcher default resolves via real ActiveJ
 RSpec.describe ActiveRecord::Materialized::Configuration do
   let(:config) { described_class.new }
 
-  it "provides sensible defaults" do
+  it "defaults the metadata and write-outbox table names" do
     expect(config.metadata_table_name).to eq("ar_materialized_view_metadata")
+    expect(config.write_outbox_table_name).to eq("ar_materialized_view_write_outbox")
+  end
+
+  it "provides sensible defaults" do
     expect(config.default_refresh_strategy).to eq(:async)
     expect(config.atomic_swap_refresh).to be(true)
     expect(config.refresh_queue_name).to eq(:materialized_views)

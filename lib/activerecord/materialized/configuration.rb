@@ -11,6 +11,9 @@ module ActiveRecord
       # @return [String] name of the per-partition freshness table
       attr_accessor :partition_table_name
 
+      # @return [String] name of the write-outbox table (the optional trigger/outbox change source)
+      attr_accessor :write_outbox_table_name
+
       # @return [Numeric, ActiveSupport::Duration, nil] default {ViewRefreshPolicyClassMethods::ClassMethods#max_staleness max_staleness}
       attr_accessor :default_max_staleness
 
@@ -110,6 +113,7 @@ module ActiveRecord
       def initialize
         @metadata_table_name = "ar_materialized_view_metadata"
         @partition_table_name = "ar_materialized_view_partitions"
+        @write_outbox_table_name = "ar_materialized_view_write_outbox"
         @default_max_staleness = nil
         @refresh_timeout = nil
         @atomic_swap_refresh = true
