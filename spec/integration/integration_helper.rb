@@ -3,6 +3,7 @@
 require "spec_helper"
 require_relative "adapters"
 require_relative "support/integration_schema"
+require_relative "support/cdc_capture"
 
 # Shared setup for :db_matrix examples: connect to a given adapter, provision the
 # schema fresh, and reset the gem's global registries — mirroring spec_helper's

@@ -26,7 +26,8 @@ via *scoped* maintenance — all observed through the gem's real instrumentation
 ## What the suite covers
 
 - **`integration_adapters_spec`** — pure-Ruby registry unit checks (env parsing, `ARM_ONLY`, availability). Runs in the fast gate; no database.
-- **`cdc_matrix_spec`** (#70) — per engine: a raw write bypasses callbacks, is relayed via `ingest_change`, and the view converges via scoped maintenance.
+- **`cdc_matrix_spec`** (#70) — per engine: a raw write bypasses callbacks, is relayed via `ingest_change`, and the view converges via scoped maintenance. The descriptor is synthesized at the write site (the fast, capture-shaped default).
+- **`cdc_real_capture_spec`** (#80) — the literal CDC path: a raw write is **decoded from the database's own change log** (a `test_decoding` logical slot on Postgres; the ROW binlog via `mysqlbinlog` on MySQL) into a normalized descriptor, relayed via `ingest_change`, and the view converges — no write-site synthesis. Capture strategies live in [`support/cdc_capture.rb`](../spec/integration/support/cdc_capture.rb), selected per adapter by `IntegrationAdapters::CAPTURE`. SQLite has no server change log and is skipped.
 - **`load_bearing_spec`** (#84) — per engine: a wide multi-aggregate view (`COUNT`/`SUM`/`AVG`/`MIN`/`MAX`/`COUNT DISTINCT`) and a join-keyed view, driven with varied mutations (create, partition-moving update, delete, bulk write) at volume, asserting convergence and engine-consistent inferred column types.
 - **`concurrency_spec`** (#84) — spawns concurrent writer and reader processes while the parent rebuilds the view mid-flight, asserting no process crashes, no torn/empty reads, and re-convergence. Runs on **MySQL and PostgreSQL**: workers are *spawned* as fresh processes (not forked), so each opens its own clean connection and libpq's fork-unsafety is avoided. SQLite is skipped — its in-process `:memory:` database isn't shared across separate processes.
 
@@ -53,6 +54,13 @@ bundle exec rake integration:down      # stop and remove the containers
 
 Host ports **3307/5433** (not the defaults 3306/5432) are used so a MySQL or
 Postgres already running on your machine does not shadow the containers.
+
+The MySQL real-binlog capture (`cdc_real_capture_spec`) shells out to **`mysqlbinlog`**
+(`--read-from-remote-server`), which is **not** in the container — install the MySQL
+client on your host (e.g. `brew install mysql-client`, or a `mysql-client` package). It
+is gated on availability: absent, that example is skipped with a logged reason (CI
+installs it so the path is always exercised). Postgres needs no extra tooling —
+`test_decoding` is built in and `wal_level=logical` is set by `docker-compose.yml`.
 
 ### Connection environment
 

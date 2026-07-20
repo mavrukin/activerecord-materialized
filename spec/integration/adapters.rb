@@ -24,6 +24,10 @@ module IntegrationAdapters
 
   LABELS = { sqlite: "SQLite", mysql: "MySQL", postgres: "PostgreSQL" }.freeze
 
+  # Real change-log capture strategy per adapter (#80): decode the DB's own change log rather than
+  # synthesizing the CDC descriptor at the write site. See spec/integration/support/cdc_capture.rb.
+  CAPTURE = { sqlite: :none, mysql: :binlog, postgres: :logical_slot }.freeze
+
   # Raised when an ARM_* value can't be parsed into a connection config. Caught in
   # `profile`, so one malformed adapter is reported unavailable rather than
   # crashing the whole suite at spec-collection time.
@@ -31,7 +35,8 @@ module IntegrationAdapters
 
   # One database under test. A `required` adapter (named explicitly via ARM_ONLY)
   # must be reachable — the spec fails, not skips, when it is not.
-  AdapterProfile = Struct.new(:key, :label, :connection_config, :required, :config_error, keyword_init: true) do
+  AdapterProfile = Struct.new(:key, :label, :connection_config, :required, :config_error, :capture,
+                              keyword_init: true) do
     def available? = unavailable_reason.nil?
 
     def required? = required
@@ -105,7 +110,8 @@ module IntegrationAdapters
 
   def build_profile(key, config, required:, config_error: nil)
     AdapterProfile.new(
-      key: key, label: LABELS.fetch(key), connection_config: config, required: required, config_error: config_error
+      key: key, label: LABELS.fetch(key), connection_config: config, required: required,
+      config_error: config_error, capture: CAPTURE.fetch(key)
     )
   end
   private_class_method :build_profile

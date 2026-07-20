@@ -48,6 +48,19 @@ jobs:
           ruby-version: "3.4"
           bundler-cache: true
 
+      # The MySQL real-binlog CDC capture (#80) shells out to mysqlbinlog. It is gated on availability
+      # (skips locally when absent), so ensure it is present here — the trailing --version fails the
+      # job if it can't be provided, keeping the MySQL capture path actually exercised in CI.
+      - name: Ensure mysqlbinlog is available
+        if: inputs.adapter == 'mysql'
+        run: |
+          if ! command -v mysqlbinlog >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends mysql-client-core-8.0 \
+              || sudo apt-get install -y --no-install-recommends mysql-client
+          fi
+          mysqlbinlog --version
+
       - name: Run integration matrix (${{ inputs.adapter }})
         env:
           ARM_ONLY: ${{ inputs.adapter }}
