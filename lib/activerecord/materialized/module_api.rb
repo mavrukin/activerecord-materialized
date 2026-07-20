@@ -201,9 +201,16 @@ module ActiveRecord
         )
       end
 
-      def atomic_swap_refresh?
-        configuration.atomic_swap_refresh
-      end
+      # Relay pending {WriteOutbox} rows (captured by database triggers for out-of-band writes)
+      # through {#ingest_change}, then delete them. The operational entry point run from a poller,
+      # cron, or background job when a table has trigger/outbox capture installed. Returns the number
+      # of rows relayed so a caller can loop until drained. See +docs/out-of-band-writes.md+.
+      #
+      # @param limit [Integer, nil] max rows to relay this pass (nil = all pending)
+      # @return [Integer]
+      def drain_write_outbox!(limit: nil) = WriteOutbox.drain!(limit: limit)
+
+      def atomic_swap_refresh? = configuration.atomic_swap_refresh
 
       attr_writer :configuration
 

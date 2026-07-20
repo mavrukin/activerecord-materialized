@@ -1,0 +1,21 @@
+# frozen_string_literal: true
+
+# Installs activerecord-materialized write-outbox triggers on <%= table_name %>. The triggers append
+# every INSERT/UPDATE/DELETE — including raw SQL and writes from other services — to the outbox table,
+# so out-of-band writes still reach view maintenance. Relay them with
+# ActiveRecord::Materialized.drain_write_outbox! from a poller, cron, or background job.
+#
+# The correct trigger DDL for this database's adapter (SQLite/MySQL/Postgres) is emitted at migrate
+# time; the outbox table is provisioned lazily on first install. See docs/out-of-band-writes.md.
+class InstallWriteOutboxTriggersOn<%= file_name.camelize %> < ActiveRecord::Migration[<%= ActiveRecord::Migration.current_version %>]
+  def up
+    ActiveRecord::Materialized::WriteOutbox.install_triggers!(
+      :<%= file_name %>,
+      key_columns: %i[<%= columns.join(" ") %>]
+    )
+  end
+
+  def down
+    ActiveRecord::Materialized::WriteOutbox.uninstall_triggers!(:<%= file_name %>)
+  end
+end

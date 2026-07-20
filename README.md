@@ -537,6 +537,31 @@ CDC composes with callbacks (use callbacks for in-app writes and CDC for the wri
 paths they miss) as long as each view has a single source: give CDC-fed views
 `change_source :none`.
 
+### Capturing out-of-band writes with database triggers
+
+When you can't hook the write in code (a DBA's ad-hoc SQL, another service writing
+the same table) but don't want to operate a full CDC pipeline, the built-in
+**trigger/outbox adapter** captures *every* write to a table database-side and relays
+it into scoped maintenance — no external infrastructure:
+
+```bash
+bin/rails generate activerecord_materialized:outbox line_items category region
+bin/rails db:migrate   # installs AFTER INSERT/UPDATE/DELETE triggers (adapter-correct DDL)
+```
+
+```ruby
+# Relay captured writes on a schedule (cron / recurring job / poller).
+ActiveRecord::Materialized.drain_write_outbox!
+```
+
+Triggers append the changed `GROUP BY` keys to an outbox table; `drain_write_outbox!`
+relays them through `ingest_change`, so an out-of-band write maintains exactly the
+partitions it touched. The triggers fire on *every* write to the table, so the fed view
+is `change_source :none` (a single source — not mixed with callbacks). See
+**[detecting out-of-band writes](docs/out-of-band-writes.md)**
+for the full layered defense (callbacks → ingestion API → triggers → CDC →
+reconciliation) and when to choose each.
+
 ---
 
 ## Observability
