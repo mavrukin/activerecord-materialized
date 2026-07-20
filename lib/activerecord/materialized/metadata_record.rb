@@ -6,18 +6,9 @@ module ActiveRecord
     #
     # @api private
     class MetadataRecord < ::ActiveRecord::Base
-      @table_name_override = nil
+      include ConfigurableTableName
 
-      self.table_name = ::ActiveRecord::Materialized.metadata_table_name
-
-      def self.table_name=(name)
-        @table_name_override = name
-      end
-
-      def self.table_name
-        override = @table_name_override
-        override.nil? ? ::ActiveRecord::Materialized.metadata_table_name : override
-      end
+      configurable_table_name { ::ActiveRecord::Materialized.metadata_table_name }
     end
   end
 end
