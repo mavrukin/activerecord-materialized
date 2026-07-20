@@ -23,12 +23,21 @@ begin
     IntegrationSchema.register_models! # attach models to existing tables (parent provisioned them)
     view = IntegrationSchema.define_scoped_view(ENV.fetch("ARM_WORKER_TABLE"))
 
+    mine = IntegrationSchema::LineItem.where(sku: "s#{worker_id}") # this worker's own rows, so ops never race another
     case role
     when "writer"
       iterations.times do |i|
-        IntegrationSchema::LineItem.create!(category: "cat-#{i % 5}", sku: "s#{worker_id}", amount: i + 1)
-      rescue ActiveRecord::Materialized::Refresher::RefreshError
-        nil # maintenance deferred under concurrency; the write is durable (see concurrent_workload.rb)
+        # A mix of write-path complexity, not just inserts: a create, a partition-moving update (which
+        # maintains two partitions), and a delete — each triggering scoped-recompute maintenance that
+        # serializes on the per-view lock. Each worker only touches its own rows, so there is no
+        # cross-worker row race; a row already gone (or maintenance deferred) is benign.
+        case i % 4
+        when 0, 1 then mine.create!(category: "cat-#{i % 5}", amount: i + 1) # where(sku:) sets sku on create
+        when 2 then mine.order(:id).last&.update!(category: "cat-#{(i + 1) % 5}")
+        else mine.order(:id).first&.destroy
+        end
+      rescue ActiveRecord::Materialized::Refresher::RefreshError, ActiveRecord::RecordNotFound
+        nil # maintenance deferred under concurrency, or the row was already removed — the write is durable
       end
     when "reader"
       iterations.times { raise "torn read: empty cache during concurrent maintenance" if view.unscoped.none? }

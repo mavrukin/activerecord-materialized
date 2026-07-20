@@ -547,12 +547,29 @@ maps directly onto this call: `op` `c`/`u`/`d`/`r` → `:create`/`:update`/`:des
 (a snapshot `r` → `:create`), the `before`/`after` row images → `before:`/`after:`, and
 `source.table` → `table:`. Capturing the **old-image** partition key on an update or
 delete requires **full row images** — MySQL `binlog-row-image=FULL` and Postgres
-`REPLICA IDENTITY FULL` — otherwise only the primary key is logged and a
-partition-moving change can't identify the old partition, so it widens to a full
-recompute. This path is integration-tested by decoding a real `test_decoding` logical
+`REPLICA IDENTITY FULL`. With only the primary key in the before-image, a
+partition-moving update can't identify the old partition, so that partition is
+under-maintained until [reconciliation](#bounded-staleness-and-self-healing) heals it —
+configure full images for correct partition-moving updates. This path is
+integration-tested by decoding a real `test_decoding` logical
 slot (Postgres) and a real ROW binlog (MySQL) and asserting the view converges — so the
 ingestion API is verified against what an actual CDC consumer emits, not a synthesized
 descriptor (see [integration testing](docs/integration-testing.md)).
+
+Rather than hand-write that mapping, pass the decoded envelope straight to
+`ingest_debezium_change`, which does it for you (op → operation, `before`/`after`,
+`source.table`, unwrapping a nested `payload`) and no-ops a `nil` tombstone:
+
+```ruby
+consumer.each do |event|
+  ActiveRecord::Materialized.ingest_debezium_change(event)
+rescue => e
+  # Isolate a bad event and keep consuming (log it / route to a DLQ) rather than poison-pilling the
+  # stream. A non-row op like TRUNCATE ("t") raises here — recompute those with
+  # ActiveRecord::Materialized.mark_dirty_for_tables!(["line_items"]).
+  report(e)
+end
+```
 
 CDC composes with callbacks (use callbacks for in-app writes and CDC for the write
 paths they miss) as long as each view has a single source: give CDC-fed views
