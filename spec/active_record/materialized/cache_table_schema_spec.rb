@@ -61,4 +61,34 @@ RSpec.describe ActiveRecord::Materialized::CacheTableSchema do
   ensure
     connection.drop_table(:arm_star_probe, if_exists: true)
   end
+
+  # #89 — a projection over an ALIASED Arel table (e.g. a self-join alias) must type against the
+  # underlying real table, not fail to resolve the alias (which fell back to :string / a scale-0 wide
+  # decimal / the decimal MIN/MAX fallback).
+  it "types an aliased-table projection from the underlying column, across projection kinds" do
+    connection = ActiveRecord::Base.connection
+    probe = alias_probe(connection)
+    aliased = probe.arel_table.alias("p2") # the aliased table whose name is not a real relation
+    relation = probe.from(aliased).group(aliased[:qty]).select(
+      aliased[:qty].as("qty"), aliased[:amount].sum.as("amount_sum"), aliased[:happened_on].maximum.as("last_on")
+    )
+    columns = described_class.column_definitions(connection, relation).index_by(&:name)
+
+    # plain projection → :integer (not :string); MAX → the source date (not a decimal fallback)
+    expect(columns.transform_values(&:type)).to include("qty" => :integer, "last_on" => :date)
+    # SUM keeps the source column's scale (2), not the scale-0 wide-decimal fallback
+    expect([columns["amount_sum"].type, columns["amount_sum"].scale]).to eq([:decimal, 2])
+  ensure
+    connection.drop_table(:arm_alias_probe, if_exists: true)
+  end
+
+  # A probe table with integer/decimal/date columns for the aliased-projection inference test.
+  def alias_probe(connection)
+    connection.create_table(:arm_alias_probe, force: true) do |t|
+      t.integer :qty
+      t.decimal :amount, precision: 10, scale: 2
+      t.date :happened_on
+    end
+    Class.new(ActiveRecord::Base) { self.table_name = "arm_alias_probe" }
+  end
 end

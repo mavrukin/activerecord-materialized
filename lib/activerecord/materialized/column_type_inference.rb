@@ -144,18 +144,24 @@ module ActiveRecord
         Definition.new(name: name, type: :decimal, precision: column.precision, scale: column.scale)
       end
 
-      # The live source Column an Arel attribute names, or nil when its table/column can't
-      # be found (e.g. an aliased table, whose name is not a real relation).
+      # The live source Column an Arel attribute names, or nil when its table/column can't be found.
       def source_column(connection, node)
-        columns = connection.columns(node.relation.name)
+        columns = connection.columns(source_relation_name(node.relation))
         columns.find { |candidate| candidate.name == node.name.to_s }
       rescue ::ActiveRecord::StatementInvalid
         nil
       end
 
+      # The real table name an Arel relation refers to, unwrapping a TableAlias (e.g. a self-join
+      # `Model.arel_table.alias("t2")`) to its underlying table — so an aliased attribute types against
+      # the real column instead of failing to resolve against the alias (which is not a real relation).
+      def source_relation_name(relation)
+        relation.is_a?(::Arel::Nodes::TableAlias) ? relation.relation.name : relation.name
+      end
+
       private_class_method :aggregate_column, :sum_avg_column, :decimal_aggregate, :min_max_column,
                            :aggregate_source_column, :source_scale, :attribute_column, :named_column,
-                           :column_from_source, :source_column
+                           :column_from_source, :source_column, :source_relation_name
     end
   end
 end
