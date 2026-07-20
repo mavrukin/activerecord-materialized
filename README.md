@@ -532,6 +532,14 @@ end
   partition-moving `:update` needs both sides (full `before`+`after`, or
   `key_attributes`); a lone after-image can't identify the old partition, so it
   safely widens rather than under-scoping (relevant for minimal-image binlogs).
+- **Watermarks are optional.** Pass `source_ts:` (a monotonic per-partition value —
+  a Debezium `ts_ms`, a Kafka offset) and the engine records the max applied
+  watermark per partition: a redelivered or out-of-order change whose watermark is
+  already applied is skipped as provably-stale (an optimization over always-recompute
+  — best-effort and backed by reconciliation, never a substitute for it), and a view's
+  freshness is observable via `SalesSummary.source_watermark` (the oldest applied
+  partition watermark; subtract from your source clock for lag). Omit it and behavior
+  is unchanged.
 
 **Decoding a log-based CDC envelope.** A log-based CDC platform (Debezium / Maxwell /
 Kafka Connect, reading the MySQL binlog or Postgres WAL) emits a change envelope that

@@ -28,5 +28,15 @@ class CreateArMaterializedViewMetadata < ActiveRecord::Migration[<%= ActiveRecor
     end
 
     add_index :ar_materialized_view_partitions, %i[view_name partition_key], unique: true
+
+    create_table :ar_materialized_view_source_watermarks do |t|
+      t.string :view_name, null: false
+      t.string :partition_key, null: false
+      t.bigint :source_ts, null: false
+
+      t.timestamps
+    end
+
+    add_index :ar_materialized_view_source_watermarks, %i[view_name partition_key], unique: true
   end
 end

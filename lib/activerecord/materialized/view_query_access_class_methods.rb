@@ -54,6 +54,16 @@ module ActiveRecord
           view_class.metadata.last_refreshed_at
         end
 
+        # The oldest applied CDC source watermark across the view's partitions — its most-behind
+        # partition — or +nil+ if no watermarked change has been ingested (see {SourceWatermark}).
+        # Subtract from your source clock (same unit as the +source_ts+ you pass {Materialized.ingest_change})
+        # to get the view's freshness/lag.
+        #
+        # @return [Integer, nil]
+        def source_watermark
+          SourceWatermark.new(view_class).oldest
+        end
+
         # Whether a refresh is currently in progress for the view.
         #
         # @return [Boolean]

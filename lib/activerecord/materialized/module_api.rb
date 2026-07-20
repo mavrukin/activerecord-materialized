@@ -191,14 +191,22 @@ module ActiveRecord
       # @param key_attributes [Hash, nil] the GROUP BY key columns of the changed row
       # @param before [Hash, nil] pre-image, for +:update+/+:destroy+
       # @param after [Hash, nil] post-image, for +:create+/+:update+
+      # @param source_ts [Integer, nil] optional monotonic source watermark (e.g. a Debezium +ts_ms+ or
+      #   a per-key Kafka offset). When given, an affected partition already applied at/after this value
+      #   is skipped as provably-stale (best-effort, reconcile-backed), and the view's freshness/lag
+      #   becomes observable via {SourceWatermark}. Ignored for callback-driven and full-recompute writes.
+      # @param images [Hash] the change images/keys — +key_attributes:+, +before:+, +after:+ (forwarded
+      #   to {WriteChange.from_descriptor}, which rejects any unrecognized keyword)
       # @return [void]
-      def ingest_change(table:, operation:, key_attributes: nil, before: nil, after: nil)
-        publish_write_change!(
-          WriteChange.from_descriptor(
-            table_name: table, operation: operation,
-            key_attributes: key_attributes, before: before, after: after
-          )
-        )
+      def ingest_change(table:, operation:, source_ts: nil, **images)
+        unless source_ts.nil? || source_ts.is_a?(Integer)
+          raise ArgumentError,
+                "source_ts must be an Integer (e.g. a Debezium ts_ms or a Kafka offset); got #{source_ts.class}"
+        end
+
+        change = WriteChange.from_descriptor(table_name: table, operation: operation, **images)
+        change = change.with_source_ts(source_ts) if source_ts
+        publish_write_change!(change)
       end
 
       # Relay pending {WriteOutbox} rows (captured by database triggers for out-of-band writes)
