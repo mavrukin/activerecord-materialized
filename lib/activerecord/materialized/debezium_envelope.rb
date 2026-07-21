@@ -13,8 +13,13 @@ module ActiveRecord
     #   { "op" => "u",
     #     "before" => { "id" => 1, "category" => "books", ... },   # full row image (see below)
     #     "after"  => { "id" => 1, "category" => "games", ... },
-    #     "source" => { "table" => "line_items", ... } }
+    #     "ts_ms"  => 1710000000000,                               # connector processing time (unused)
+    #     "source" => { "table" => "line_items", "ts_ms" => 1710000000000, ... } }
     #
+    # The +source.ts_ms+ (the DB commit time, monotonic within a source) is forwarded as the +source_ts+
+    # watermark, so a consumer relaying envelopes gets out-of-order suppression + freshness
+    # ({SourceWatermark}) for free. The top-level +ts_ms+ is a *different* clock (the connector's
+    # processing time), so it is not used as a fallback — mixing clocks would break monotonicity.
     # Correct **partition-moving** updates require a full +before+ image (+binlog-row-image=FULL+ on
     # MySQL, +REPLICA IDENTITY FULL+ on Postgres); with only the primary key in +before+, the old
     # partition is under-maintained until reconciliation heals it. See +docs/out-of-band-writes.md+
@@ -28,8 +33,9 @@ module ActiveRecord
       # @param envelope [Hash, nil] a decoded Debezium change event (string or symbol keys), or +nil+
       #   for a Kafka tombstone (the null-value message emitted after a delete for log compaction)
       # @param table [String, Symbol, nil] target-table override; defaults to the envelope's +source.table+
-      # @return [Hash, nil] +{ table:, operation:, before:, after: }+ for {Materialized.ingest_change},
-      #   or +nil+ for a tombstone (nothing to relay)
+      # @return [Hash, nil] +{ table:, operation:, before:, after: }+ (plus +source_ts:+ when the
+      #   envelope carries a usable +ts_ms+) for {Materialized.ingest_change}, or +nil+ for a
+      #   tombstone (nothing to relay)
       # @raise [ArgumentError] for a non-tombstone envelope with no +op+ (not a Debezium change event,
       #   or not unwrapped), an unsupported +op+, or when the target table can't be determined
       def self.to_change_descriptor(envelope, table = nil)
@@ -39,8 +45,10 @@ module ActiveRecord
         op = fetch(change, "op")
         raise ArgumentError, "not a Debezium change envelope (no op)" if op.nil?
 
-        { table: resolve_table(table, change), operation: operation_for(op),
-          before: fetch(change, "before"), after: fetch(change, "after") }
+        descriptor = { table: resolve_table(table, change), operation: operation_for(op),
+                       before: fetch(change, "before"), after: fetch(change, "after") }
+        ts = source_ts(change)
+        ts ? descriptor.merge(source_ts: ts) : descriptor
       end
 
       # Debezium's default envelope nests the change under +payload+; the ExtractNewRecordState SMT
@@ -60,6 +68,12 @@ module ActiveRecord
       end
       private_class_method :fetch
 
+      # A field from the envelope's +source+ metadata block (string/symbol keys), or nil if absent.
+      def self.source_field(change, key)
+        fetch(fetch(change, "source"), key)
+      end
+      private_class_method :source_field
+
       def self.operation_for(op_code)
         OPERATIONS.fetch(op_code.to_s) do
           raise ArgumentError, "unsupported Debezium op #{op_code.inspect} (expected one of c, r, u, d)"
@@ -68,12 +82,24 @@ module ActiveRecord
       private_class_method :operation_for
 
       def self.resolve_table(table, change)
-        resolved = table.presence || fetch(fetch(change, "source"), "table")
+        resolved = table.presence || source_field(change, "table")
         return resolved.to_s if resolved.present?
 
         raise ArgumentError, "could not determine the table (pass table or include source.table in the envelope)"
       end
       private_class_method :resolve_table
+
+      # The per-partition source watermark for this change: Debezium's +source.ts_ms+ (the DB commit
+      # time, monotonic within a source). Only an Integer is forwarded — a missing or non-integer value
+      # yields no watermark, so the change is maintained exactly as before (see {SourceWatermark}). The
+      # top-level +ts_ms+ (the connector's *processing* wall-clock) is intentionally NOT a fallback: it
+      # is a different clock, so mixing the two per partition would break the monotonicity suppression
+      # relies on. A real Debezium change event always carries +source.ts_ms+.
+      def self.source_ts(change)
+        ts = source_field(change, "ts_ms")
+        ts if ts.is_a?(Integer)
+      end
+      private_class_method :source_ts
     end
   end
 end

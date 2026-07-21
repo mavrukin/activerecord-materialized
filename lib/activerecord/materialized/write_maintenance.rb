@@ -24,7 +24,7 @@ module ActiveRecord
 
       def record_scoped_recompute!(change)
         delta = scoped_recompute_delta(change)
-        return if delta.nil? # every affected partition already applied a newer-or-equal source_ts
+        return if delta.nil? # every affected partition already applied a strictly-newer source_ts
 
         instrument(change, path: :scoped_recompute, partitions: delta.tracked_partition_count,
                            scope: delta.full_partition? ? :full : :scoped)

@@ -533,13 +533,15 @@ end
   `key_attributes`); a lone after-image can't identify the old partition, so it
   safely widens rather than under-scoping (relevant for minimal-image binlogs).
 - **Watermarks are optional.** Pass `source_ts:` (a monotonic per-partition value —
-  a Debezium `ts_ms`, a Kafka offset) and the engine records the max applied
+  a Debezium `source.ts_ms`, a Kafka offset) and the engine records the max applied
   watermark per partition: a redelivered or out-of-order change whose watermark is
-  already applied is skipped as provably-stale (an optimization over always-recompute
-  — best-effort and backed by reconciliation, never a substitute for it), and a view's
-  freshness is observable via `SalesSummary.source_watermark` (the oldest applied
-  partition watermark; subtract from your source clock for lag). Omit it and behavior
-  is unchanged.
+  *strictly older* than the partition's applied watermark is skipped as provably-stale
+  (a distinct change sharing a coarse timestamp — e.g. a second-granular binlog
+  `ts_ms` — still applies, so a real write is never dropped; an optimization over
+  always-recompute — best-effort and backed by reconciliation, never a substitute for
+  it), and a view's freshness is observable via `SalesSummary.source_watermark` (the
+  oldest applied partition watermark; subtract from your source clock for lag). Omit it
+  and behavior is unchanged.
 
 **Decoding a log-based CDC envelope.** A log-based CDC platform (Debezium / Maxwell /
 Kafka Connect, reading the MySQL binlog or Postgres WAL) emits a change envelope that
@@ -558,7 +560,8 @@ descriptor (see [integration testing](docs/integration-testing.md)).
 
 Rather than hand-write that mapping, pass the decoded envelope straight to
 `ingest_debezium_change`, which does it for you (op → operation, `before`/`after`,
-`source.table`, unwrapping a nested `payload`) and no-ops a `nil` tombstone:
+`source.table`, and `source.ts_ms` → `source_ts` (the watermark above) while unwrapping a
+nested `payload`) and no-ops a `nil` tombstone:
 
 ```ruby
 consumer.each do |event|

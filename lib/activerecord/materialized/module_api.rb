@@ -187,10 +187,11 @@ module ActiveRecord
       # @param key_attributes [Hash, nil] the GROUP BY key columns of the changed row
       # @param before [Hash, nil] pre-image, for +:update+/+:destroy+
       # @param after [Hash, nil] post-image, for +:create+/+:update+
-      # @param source_ts [Integer, nil] optional monotonic source watermark (e.g. a Debezium +ts_ms+ or
-      #   a per-key Kafka offset). When given, an affected partition already applied at/after this value
-      #   is skipped as provably-stale (best-effort, reconcile-backed), and the view's freshness/lag
-      #   becomes observable via {SourceWatermark}. Ignored for callback-driven and full-recompute writes.
+      # @param source_ts [Integer, nil] optional monotonic source watermark (e.g. a Debezium +source.ts_ms+
+      #   or a per-key Kafka offset). When given, an affected partition that already applied a strictly-newer
+      #   value is skipped as provably-stale — an equal value still applies, so a coarse (second-granular)
+      #   timestamp is safe (best-effort, reconcile-backed) — and the view's freshness/lag becomes
+      #   observable via {SourceWatermark}. Ignored for callback-driven and full-recompute writes.
       # @param images [Hash] the change images/keys — +key_attributes:+, +before:+, +after:+ (forwarded
       #   to {WriteChange.from_descriptor}, which rejects any unrecognized keyword)
       # @return [void]
@@ -206,7 +207,8 @@ module ActiveRecord
       end
 
       # Relay one Debezium CDC change envelope through {#ingest_change} — mapping +op+ (c/r → create,
-      # u → update, d → destroy), the +before+/+after+ row images, and +source.table+ for you (a nested
+      # u → update, d → destroy), the +before+/+after+ row images, +source.table+, and the envelope's
+      # +source.ts_ms+ as the +source_ts+ watermark for you (a nested
       # +payload+ is unwrapped). A +nil+ envelope (a Kafka tombstone) is a no-op; a non-tombstone with
       # no +op+, or an unsupported +op+, raises. Pass +table+ to override the target when it differs
       # from +source.table+. +table+ is positional (not a keyword) so an inline envelope literal is not
