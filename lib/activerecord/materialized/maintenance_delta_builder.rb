@@ -32,7 +32,16 @@ module ActiveRecord
                     when :update then [@change.before, @change.after]
                     else []
                     end
-        snapshots.filter_map { |attributes| key_tuple(attributes) }.uniq
+        tuples = snapshots.map { |attributes| key_tuple(attributes) }
+        # An update touches two partitions (old + new), a create/destroy one. If ANY affected snapshot
+        # can't yield its partition key — e.g. a non-FULL CDC before- or after-image with only the
+        # primary key — we can't identify every affected partition (a partial after-image can't even
+        # rule out a move), so return no tuples and let +build+ widen to a full recompute rather than
+        # under-scope to only the derivable side (leaving the other partition stale). +build+
+        # de-duplicates the tuples it scopes, so no +uniq+ here.
+        return [] if tuples.any?(&:nil?)
+
+        tuples
       end
 
       # Partition key tuple(s) from the configured resolver, or [] (=> full

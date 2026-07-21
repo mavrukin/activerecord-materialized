@@ -51,6 +51,20 @@ RSpec.describe ActiveRecord::Materialized::MaintenanceDeltaBuilder do
     expect(delta.key_tuples).to contain_exactly(["games"], ["books"])
   end
 
+  it "widens an update when only one image carries the group key (partial CDC image, #110)" do
+    # A non-FULL CDC image: one side has the group key, the other only a non-key column. The side
+    # without it could name a different partition (a move), so scope can't be identified => widen.
+    before_only = ActiveRecord::Materialized::WriteChange.new(
+      table_name: "items", operation: :update, before: { "id" => 1 }, after: { "category" => "games" }
+    )
+    after_only = ActiveRecord::Materialized::WriteChange.new(
+      table_name: "items", operation: :update, before: { "category" => "books" }, after: { "amount" => 10 }
+    )
+
+    expect(described_class.new(before_only, ["category"]).build.full_partition?).to be(true) # PK-only before
+    expect(described_class.new(after_only, ["category"]).build.full_partition?).to be(true)  # key-less after
+  end
+
   describe "with a partition-key resolver (issue #61)" do
     it "derives single-column keys from the resolver, taking precedence over the payload" do
       # a scalar, chosen over the payload's own "books" category (resolver is authoritative)
