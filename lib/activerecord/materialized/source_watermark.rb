@@ -5,17 +5,21 @@ module ActiveRecord
     # Per-partition CDC source watermarks: the max applied +source_ts+ for each (view, partition).
     # Two jobs, both opt-in via a +source_ts+ on {Materialized.ingest_change}:
     #
-    # - **Suppression** — a redelivered or out-of-order change whose watermark is `<=` the partition's
-    #   applied watermark is provably redundant (the cache already reflects a newer-or-equal state), so
-    #   its recompute is skipped. Best-effort and **reconcile-backed**: the watermark advances at ingest,
-    #   so a crash before the recompute can over-suppress a partition until reconciliation (#64) heals
-    #   it — this is an optimization over always-recompute, never a correctness substitute.
+    # - **Suppression** — a redelivered or out-of-order change whose watermark is `<` the partition's
+    #   applied watermark is provably redundant (the cache already reflects a strictly-newer state), so
+    #   its recompute is skipped. A change at the *same* watermark still applies: a coarse (e.g.
+    #   second-granular) +source_ts+ such as Debezium's MySQL +source.ts_ms+ can tie two distinct
+    #   commits, so an equal value is not treated as a redelivery. Best-effort and **reconcile-backed**:
+    #   the watermark advances at ingest, so a crash before the recompute can over-suppress a partition
+    #   until reconciliation (#64) heals it — an optimization over always-recompute, never a correctness
+    #   substitute.
     # - **Observability** — {#oldest} reports the view's most-behind partition watermark, so a caller can
     #   compute freshness/lag against its own source clock (in the same unit as +source_ts+).
     #
     # Only the scoped-recompute path (a +change_source :none+ CDC-fed view) carries a watermark; a full
-    # recompute (no partition key) is never suppressed. +source_ts+ must be monotonic per partition
-    # (e.g. a Debezium +ts_ms+ or a per-key Kafka offset). Mirrors {PartitionState}'s per-partition store.
+    # recompute (no partition key) is never suppressed. +source_ts+ must be monotonic (non-decreasing)
+    # per partition (e.g. a Debezium +source.ts_ms+ or a per-key Kafka offset); ties are safe (only a
+    # strictly-older value is suppressed). Mirrors {PartitionState}'s per-partition store.
     #
     # @api private
     class SourceWatermark
@@ -23,8 +27,10 @@ module ActiveRecord
         @view_class = view_class
       end
 
-      # Drop the delta's partitions already applied at/after +source_ts+, and advance the watermark for
-      # the survivors. A full-partition delta (no key) is returned unchanged — it can't be scoped.
+      # Drop the delta's partitions that already applied a strictly-newer +source_ts+, and advance the
+      # watermark for the survivors — a change at the same +source_ts+ still applies, so a distinct write
+      # sharing a coarse (e.g. second-granular) timestamp is never suppressed. A full-partition delta
+      # (no key) is returned unchanged — it can't be scoped.
       #
       # @return [MaintenanceDelta, nil] the surviving partitions, or nil when every one was suppressed
       def suppress(source_ts, delta)
@@ -32,7 +38,7 @@ module ActiveRecord
 
         ensure_table!
         current = current_watermarks(delta.key_tuples) # one read for the whole decision
-        fresh = delta.key_tuples.reject { |tuple| (ts = current[serialize(tuple)]) && ts >= source_ts }
+        fresh = delta.key_tuples.reject { |tuple| (ts = current[serialize(tuple)]) && ts > source_ts }
         return nil if fresh.empty?
 
         advance!(fresh, source_ts)

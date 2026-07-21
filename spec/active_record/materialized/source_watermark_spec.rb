@@ -29,6 +29,21 @@ RSpec.describe ActiveRecord::Materialized::SourceWatermark do
     expect(view.find_by(category: "books").item_count).to eq(3) # a newer ts=150 applies again
   end
 
+  it "applies a second distinct change sharing a coarse source_ts (an equal ts is not a redelivery)" do
+    seed_items(["books", 1])
+    view.rebuild!(confirm: true) # books => 1
+
+    Item.create!(category: "books", amount: 1) # source: 2 books
+    ingest("books", source_ts: 100)
+    expect(view.find_by(category: "books").item_count).to eq(2) # first change at ts=100 applied
+
+    # A second, distinct commit in the same coarse tick (e.g. MySQL's second-granular binlog ts) shares
+    # source_ts=100 — it must still apply. Suppression drops only a strictly-older ts, never an equal one.
+    Item.create!(category: "books", amount: 1) # source: 3 books
+    ingest("books", source_ts: 100)
+    expect(view.find_by(category: "books").item_count).to eq(3) # the equal-ts change is not suppressed (#118)
+  end
+
   it "tracks watermarks per partition, so one partition's watermark can't suppress another" do
     seed_items(["books", 1], ["games", 1])
     view.rebuild!(confirm: true)

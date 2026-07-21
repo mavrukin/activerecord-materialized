@@ -26,7 +26,7 @@ module ActiveRecord
         resolver = @view_class.partition_key_resolver_for(change.table_name)
         delta = MaintenanceDeltaBuilder.new(change, @view_class.maintenance_key_columns, resolver: resolver).build
         delta = SourceWatermark.new(@view_class).suppress(change.source_ts, delta) if change.source_ts
-        return if delta.nil? # every affected partition already applied a newer-or-equal source_ts
+        return if delta.nil? # every affected partition already applied a strictly-newer source_ts
 
         instrument(change, path: :scoped_recompute, partitions: delta.tracked_partition_count,
                            scope: delta.full_partition? ? :full : :scoped)
