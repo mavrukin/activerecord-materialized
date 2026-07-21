@@ -22,11 +22,7 @@ module ActiveRecord
     # strictly-older value is suppressed). Mirrors {PartitionState}'s per-partition store.
     #
     # @api private
-    class SourceWatermark
-      def initialize(view_class)
-        @view_class = view_class
-      end
-
+    class SourceWatermark < PartitionKeyedStore
       # Drop the delta's partitions that already applied a strictly-newer +source_ts+, and advance the
       # watermark for the survivors — a change at the same +source_ts+ still applies, so a distinct write
       # sharing a coarse (e.g. second-granular) timestamp is never suppressed. A full-partition delta
@@ -53,7 +49,7 @@ module ActiveRecord
       #
       # @return [Integer, nil]
       def oldest
-        return nil unless SourceWatermarkRecord.table_exists?
+        return nil unless record_class.table_exists?
 
         scope.minimum(:source_ts)
       end
@@ -73,38 +69,24 @@ module ActiveRecord
       def advance!(tuples, source_ts)
         tuples.each do |tuple|
           key = serialize(tuple)
-          row = SourceWatermarkRecord.create_or_find_by(view_name: view_key, partition_key: key) do |record|
+          row = record_class.create_or_find_by(view_name: view_key, partition_key: key) do |record|
             record.source_ts = source_ts
           end
           row.update!(source_ts: source_ts) if row.source_ts < source_ts
         end
       end
 
-      def scope
-        SourceWatermarkRecord.where(view_name: view_key)
+      def record_class
+        SourceWatermarkRecord
       end
 
-      def view_key
-        @view_class.view_key
+      def table_name
+        ::ActiveRecord::Materialized.configuration.source_watermark_table_name
       end
 
-      def serialize(key_tuple)
-        key_tuple.map(&:to_s).to_json
-      end
-
-      def ensure_table!
-        connection = @view_class.connection
-        return if SourceWatermarkRecord.table_exists?
-
-        table = ::ActiveRecord::Materialized.configuration.source_watermark_table_name
-        connection.create_table(table) do |t|
-          t.string :view_name, null: false
-          t.string :partition_key, null: false
-          t.bigint :source_ts, null: false
-          t.timestamps
-        end
-        connection.add_index(table, %i[view_name partition_key], unique: true)
-        SourceWatermarkRecord.reset_column_information
+      def define_columns(table)
+        table.bigint :source_ts, null: false
+        table.timestamps
       end
     end
   end
