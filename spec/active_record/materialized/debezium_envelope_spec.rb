@@ -23,6 +23,27 @@ RSpec.describe ActiveRecord::Materialized::DebeziumEnvelope do
       expect(destroy).to include(operation: :destroy, before: { "category" => "games" }, after: nil)
     end
 
+    it "forwards source.ts_ms as source_ts, ignoring the top-level ts_ms (a different clock)" do
+      # source.ts_ms (the DB commit time) is the watermark; the top-level ts_ms is the connector's
+      # processing clock and is intentionally ignored (mixing them would break suppression's monotonicity).
+      from_source = described_class.to_change_descriptor(
+        envelope("u", before: { "category" => "books" }, after: { "category" => "games" },
+                      source: { "table" => "items", "ts_ms" => 100 }, ts_ms: 999)
+      )
+      # A top-level ts_ms alone is not a fallback — it carries no watermark...
+      top_only = described_class.to_change_descriptor(envelope("c", after: { "category" => "books" }, ts_ms: 50))
+      # ...nor does a non-integer source.ts_ms, or no ts_ms at all (behavior is exactly as before; #106 opt-in).
+      non_integer = described_class.to_change_descriptor(
+        envelope("c", after: { "category" => "books" }, source: { "table" => "items", "ts_ms" => "100" })
+      )
+      none = described_class.to_change_descriptor(envelope("c", after: { "category" => "books" }))
+
+      expect(from_source).to include(source_ts: 100)  # source.ts_ms is the watermark, not the top-level 999
+      expect(top_only).not_to have_key(:source_ts)    # the top-level ts_ms is not a fallback
+      expect(non_integer).not_to have_key(:source_ts) # a non-integer source.ts_ms is ignored
+      expect(none).not_to have_key(:source_ts)        # nothing to forward → unchanged behavior
+    end
+
     it "resolves the table from source.table, honoring a non-blank override and ignoring a blank one" do
       event = envelope("c", after: { "category" => "books" })
 
@@ -73,6 +94,23 @@ RSpec.describe ActiveRecord::Materialized::DebeziumEnvelope do
       ActiveRecord::Materialized.ingest_debezium_change(envelope("c", after: { "category" => "books" }))
 
       expect(view.find_by(category: "books").item_count).to eq(2) # the relayed create re-aggregated books
+    end
+
+    it "forwards source.ts_ms so a later out-of-order envelope is suppressed and freshness advances" do
+      # A watermarked create at ts=100 re-aggregates books and records the partition watermark.
+      Item.create!(category: "books", amount: 1) # source now has 2 books (out-of-band)
+      ActiveRecord::Materialized.ingest_debezium_change(
+        envelope("c", after: { "category" => "books" }, source: { "table" => "items", "ts_ms" => 100 })
+      )
+      expect(view.find_by(category: "books").item_count).to eq(2) # applied
+      expect(view.source_watermark).to eq(100)                    # watermark advanced from ts_ms
+
+      # A stale envelope (ts=50 < 100) for the same partition is suppressed as provably-stale.
+      Item.create!(category: "books", amount: 1) # source now has 3 books...
+      ActiveRecord::Materialized.ingest_debezium_change(
+        envelope("c", after: { "category" => "books" }, source: { "table" => "items", "ts_ms" => 50 })
+      )
+      expect(view.find_by(category: "books").item_count).to eq(2) # ...but ts=50 is suppressed
     end
 
     it "is a no-op for a tombstone (nil envelope)" do
