@@ -5,16 +5,12 @@ module ActiveRecord
     # Tracks which partitions of a cold view have been materialized ("fresh") so
     # a read can decide whether a partition is served from the cache or read
     # through to the source. Warm views are fully materialized and ignore this.
-    class PartitionState
-      def initialize(view_class)
-        @view_class = view_class
-      end
-
+    class PartitionState < PartitionKeyedStore
       def all_fresh?(key_tuples)
         return false if key_tuples.empty?
 
         ensure_table!
-        @view_class.metadata.ensure_schema! # the epoch subquery reads the metadata table
+        view_class.metadata.ensure_schema! # the epoch subquery reads the metadata table
         serialized = key_tuples.map { |tuple| serialize(tuple) }.uniq
         # Only marks stamped with the current epoch count as fresh — a mark left behind by a populate
         # that raced a reset! (a widen invalidation) carries a superseded generation and is ignored.
@@ -31,7 +27,7 @@ module ActiveRecord
 
         ensure_table!
         key_tuples.uniq.each do |tuple|
-          record = PartitionRecord.create_or_find_by(view_name: view_key, partition_key: serialize(tuple))
+          record = record_class.create_or_find_by(view_name: view_key, partition_key: serialize(tuple))
           record.update!(generation: generation) unless record.generation == generation
         end
       end
@@ -51,7 +47,7 @@ module ActiveRecord
       # pre-bump epoch is ignored too); the leftover rows are reclaimed by the next reset!.
       def reset!
         ensure_table!
-        @view_class.metadata.bump_fresh_set_generation!
+        view_class.metadata.bump_fresh_set_generation!
         scope.delete_all
       end
 
@@ -59,7 +55,7 @@ module ActiveRecord
       # stamps its marks with it, so a widen committing during the read advances the epoch and leaves the
       # mark un-served. (all_fresh? compares against the epoch in-SQL via current_generation_scope.)
       def current_generation
-        @view_class.metadata.fresh_set_generation
+        view_class.metadata.fresh_set_generation
       end
 
       # The partition key tuples a query touches, or nil unless the conditions are
@@ -99,49 +95,33 @@ module ActiveRecord
 
       private
 
+      def record_class
+        PartitionRecord
+      end
+
+      def table_name
+        ::ActiveRecord::Materialized.partition_table_name
+      end
+
+      def define_columns(table)
+        table.integer :generation, null: false, default: 0
+        table.datetime :created_at, null: false
+      end
+
+      # Lazily add the fresh-set epoch column (#120) to a partition table provisioned by an earlier
+      # version, so an app migrated from before this column picks it up without a new migration.
+      def ensure_columns!(connection)
+        return if record_class.column_names.include?("generation")
+
+        connection.add_column(table_name, :generation, :integer, null: false, default: 0)
+        record_class.reset_column_information
+      end
+
       # The view's current epoch as a one-column relation, so all_fresh? can filter marks by it in a
       # single query (generation IN (SELECT ...)). An absent metadata row yields no match — nothing is
       # fresh — which is correct: partition marks only ever exist once maintenance has created the row.
       def current_generation_scope
         MetadataRecord.where(view_name: view_key).select(:fresh_set_generation)
-      end
-
-      def view_key
-        @view_class.view_key
-      end
-
-      def serialize(key_tuple)
-        key_tuple.map(&:to_s).to_json
-      end
-
-      def scope
-        PartitionRecord.where(view_name: view_key)
-      end
-
-      def ensure_table!
-        connection = @view_class.connection
-        return ensure_generation_column!(connection) if PartitionRecord.table_exists?
-
-        table = ::ActiveRecord::Materialized.partition_table_name
-        connection.create_table(table) do |t|
-          t.string :view_name, null: false
-          t.string :partition_key, null: false
-          t.integer :generation, null: false, default: 0
-          t.datetime :created_at, null: false
-        end
-        connection.add_index(table, %i[view_name partition_key], unique: true)
-        PartitionRecord.reset_column_information
-      end
-
-      # Lazily add the fresh-set epoch column (#120) to a partition table provisioned by an earlier
-      # version, so an app migrated from before this column picks it up without a new migration.
-      def ensure_generation_column!(connection)
-        return if PartitionRecord.column_names.include?("generation")
-
-        connection.add_column(
-          ::ActiveRecord::Materialized.partition_table_name, :generation, :integer, null: false, default: 0
-        )
-        PartitionRecord.reset_column_information
       end
     end
   end

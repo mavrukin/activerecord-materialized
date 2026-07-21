@@ -22,6 +22,7 @@ SPEC_OVERRIDES = {
   "migration_builder" => %w[migration_builder_spec.rb],
   "schema_verifier" => %w[schema_verifier_spec.rb],
   "cold_read" => %w[cold_read_spec.rb],
+  "partition_keyed_store" => %w[partition_keyed_store_spec.rb partition_state_spec.rb source_watermark_spec.rb],
   "partition_state" => %w[partition_state_spec.rb incremental_maintainer_spec.rb cold_read_spec.rb
                           cdc_ingestion_spec.rb],
   "partition_record" => %w[partition_state_spec.rb],
