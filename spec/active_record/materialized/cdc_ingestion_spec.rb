@@ -92,6 +92,8 @@ RSpec.describe CdcIngestion, :integration do
     # partition is dropped (or it serves the stale 1), and the un-appliable delta is NOT stored (or it
     # would gum up the pending payload and block populate-on-read from ever repopulating the cache).
     relay_pk_only_move(mover, "toys") # source: toys now has 2
+    # The un-appliable widen is dropped at the merge! chokepoint, not left stuck in the payload (#120).
+    expect(ActiveRecord::Materialized::MaintenanceStore.new(view).pending).to be_nil
     expect(view.where(category: "toys").pick(:item_count)).to eq(2) # read-through to source, not the stale cache
 
     # Populate-on-read still recovers: a later read + refresh repopulates 'toys' into the cache (it would

@@ -17,7 +17,8 @@ module ActiveRecord
         end
 
         def create_metadata_table!(connection)
-          connection.create_table(::ActiveRecord::Materialized.metadata_table_name, force: :cascade) do |t|
+          table = ::ActiveRecord::Materialized.metadata_table_name
+          connection.create_table(table, force: :cascade) do |t|
             t.string :view_name, null: false
             t.datetime :last_refreshed_at
             t.boolean :refreshing, null: false, default: false
@@ -29,9 +30,10 @@ module ActiveRecord
             t.text :maintenance_payload
             t.datetime :last_reconciled_at
             t.integer :reconciled_partition_count
+            t.integer :fresh_set_generation, null: false, default: 0
             t.timestamps
           end
-          connection.add_index(::ActiveRecord::Materialized.metadata_table_name, :view_name, unique: true)
+          connection.add_index(table, :view_name, unique: true)
         end
 
         # Lazily add columns introduced after a table was first provisioned, so an app
@@ -44,6 +46,7 @@ module ActiveRecord
           ensure_column!(connection, :maintenance_payload, :text)
           ensure_column!(connection, :last_reconciled_at, :datetime)
           ensure_column!(connection, :reconciled_partition_count, :integer)
+          ensure_column!(connection, :fresh_set_generation, :integer, default: 0, null: false)
         end
 
         def ensure_column!(connection, name, type, default: nil, null: true)

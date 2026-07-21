@@ -25,12 +25,13 @@ RSpec.describe ActiveRecord::Materialized::Metadata::Schema do
     %w[
       view_name last_refreshed_at refreshing dirty warm
       row_count refresh_duration_ms last_error maintenance_payload
-      last_reconciled_at reconciled_partition_count
+      last_reconciled_at reconciled_partition_count fresh_set_generation
     ].each { |column| expect(rendered).to include(":#{column}") }
   end
 
   it "provisions the partition table" do
     expect(rendered).to include("create_table :ar_materialized_view_partitions")
     expect(rendered).to include(":partition_key")
+    expect(rendered).to include(":generation") # the fresh-set epoch stamp (#120)
   end
 end

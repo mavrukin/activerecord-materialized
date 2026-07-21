@@ -14,6 +14,7 @@ class CreateArMaterializedViewMetadata < ActiveRecord::Migration[<%= ActiveRecor
       t.text :maintenance_payload
       t.datetime :last_reconciled_at
       t.integer :reconciled_partition_count
+      t.integer :fresh_set_generation, null: false, default: 0
 
       t.timestamps
     end
@@ -23,6 +24,7 @@ class CreateArMaterializedViewMetadata < ActiveRecord::Migration[<%= ActiveRecor
     create_table :ar_materialized_view_partitions do |t|
       t.string :view_name, null: false
       t.string :partition_key, null: false
+      t.integer :generation, null: false, default: 0
 
       t.datetime :created_at, null: false
     end

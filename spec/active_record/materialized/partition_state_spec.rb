@@ -78,6 +78,22 @@ RSpec.describe ActiveRecord::Materialized::PartitionState do
     expect(partitions.all_fresh?([["books"]])).to be(false)
   end
 
+  # #120: reset! (a widen invalidation) advances a per-view epoch; a populate stamps the epoch it
+  # captured before its source read, and all_fresh? honours only current-epoch marks. So a populate
+  # that raced a widen (captured the pre-widen epoch, landed after the reset) is never served stale.
+  it "ignores a populate stamped with a superseded generation, then serves a re-populate" do
+    stale_generation = partitions.current_generation # a populate captures the epoch before its source read
+    partitions.reset!                                # a widen invalidates the whole fresh set, advancing the epoch
+    partitions.mark_fresh!([["books"]], generation: stale_generation) # the stale populate lands after the reset
+
+    # The mark reflects pre-widen data, so it is not served from cache.
+    expect(partitions.all_fresh?([["books"]])).to be(false)
+
+    # A populate that captured the current epoch is served normally.
+    partitions.mark_fresh!([["books"]], generation: partitions.current_generation)
+    expect(partitions.all_fresh?([["books"]])).to be(true)
+  end
+
   it "clears partition exceptions on rebuild!" do
     view_class.where(category: "books").to_a
     view_class.refresh!
