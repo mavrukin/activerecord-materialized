@@ -16,7 +16,10 @@ module ActiveRecord
       # single full recompute, so a bulk write spanning many partitions stays
       # O(1) per write instead of re-serializing an ever-growing blob.
       def merge!(delta)
-        metadata.record_maintenance_payload!(combine(pending, delta).serialize)
+        combined = combine(pending, delta)
+        return drop_cold_full_recompute! if cold_full_recompute?(combined)
+
+        metadata.record_maintenance_payload!(combined.serialize)
       end
 
       def pending
@@ -82,6 +85,24 @@ module ActiveRecord
 
       def recompute_all?(pending)
         pending.is_a?(MaintenanceDelta) && pending.full_partition?
+      end
+
+      # A cold view can't apply a full-partition recompute (Refresher#maintainable? skips it) and storing
+      # one gums up the payload: combine's terminal absorb (see #recompute_all?) then swallows every later
+      # scoped read-miss delta, so populate-on-read never repopulates. Every cold widen funnels through
+      # merge! — an ingested widening write, DependencyRegistry.mark_dirty_for_tables!, or a scoped payload
+      # that overflows max_tracked_partitions inside #combine — so this one guard covers them all. The
+      # cheap in-memory recompute_all? short-circuits before materialized?, so the scoped hot path is free.
+      def cold_full_recompute?(combined)
+        recompute_all?(combined) && !view_class.materialized?
+      end
+
+      # Drop the un-appliable recompute and invalidate the whole fresh set so every partition falls
+      # through to the source until a read-miss repopulates it. Reset first, then clear: a crash between
+      # the two leaves reads correct-by-fallback with only an un-appliable payload the next merge! re-drops.
+      def drop_cold_full_recompute!
+        PartitionState.new(view_class).reset!
+        clear!
       end
 
       def oversized?(merged)

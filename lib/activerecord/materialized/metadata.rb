@@ -62,6 +62,28 @@ module ActiveRecord
         record.update!(warm: true)
       end
 
+      # The current fresh-set epoch for this view (see PartitionState). A populate captures it before
+      # its source read; all_fresh? honours only marks stamped with the current value. (#120)
+      def fresh_set_generation
+        record.fresh_set_generation
+      end
+
+      # Advance the fresh-set epoch atomically so every mark stamped with an earlier value is treated
+      # as stale — used by PartitionState#reset! to invalidate a cold view's whole fresh set on a widen.
+      # Ensures the row exists first (create_or_find_by absorbs a concurrent first insert), then a single
+      # atomic SQL increment (never a read-then-write), so two concurrent resets can't lost-update the
+      # epoch — a populate that captured any earlier value still fails all_fresh?. Portable across adapters.
+      def bump_fresh_set_generation!
+        ensure_schema!
+        MetadataRecord.create_or_find_by(view_name: view_class.view_key)
+        connection = view_class.connection
+        table = connection.quote_table_name(::ActiveRecord::Materialized.metadata_table_name)
+        connection.execute(
+          "UPDATE #{table} SET fresh_set_generation = fresh_set_generation + 1 " \
+          "WHERE view_name = #{connection.quote(view_class.view_key)}"
+        )
+      end
+
       def stale?(max_staleness: view_class.resolved_max_staleness)
         return true if dirty?
         return true if last_refreshed_at.nil?

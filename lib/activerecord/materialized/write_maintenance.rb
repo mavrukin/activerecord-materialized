@@ -28,8 +28,6 @@ module ActiveRecord
 
         instrument(change, path: :scoped_recompute, partitions: delta.tracked_partition_count,
                            scope: delta.full_partition? ? :full : :scoped)
-        return reset_cold_fresh_set! if cold_full_recompute?(delta)
-
         store.merge!(delta)
         mark_written_partitions_stale(delta)
       end
@@ -53,23 +51,10 @@ module ActiveRecord
         store.merge!(summary)
       end
 
-      # A cold view can't apply a full-partition recompute (Refresher#maintainable? skips it), and
-      # storing one would gum up the pending payload — combine() lets a full_partition absorb every
-      # later scoped read-miss delta, so populate-on-read could never repopulate. So a widened recompute
-      # on a cold view is dropped (not stored) and instead resets the fresh set (see {reset_cold_fresh_set!}).
-      def cold_full_recompute?(delta)
-        delta.full_partition? && !@view_class.materialized?
-      end
-
-      # Invalidate a cold view's entire fresh set — the scope of a widened recompute is unknown, so every
-      # partition falls through to the source until a later read-miss repopulates it.
-      def reset_cold_fresh_set!
-        PartitionState.new(@view_class).reset!
-      end
-
       # On a cold view the written partitions are no longer current; drop them from the fresh set until
-      # re-maintained. A warm view's cache stays authoritative. A cold-view full_partition delta is
-      # handled in record_scoped_recompute! (it resets the whole fresh set there), so it can't reach here.
+      # re-maintained. A warm view's cache stays authoritative. A cold-view full_partition (widen) is
+      # dropped and the whole fresh set reset at the MaintenanceStore#merge! chokepoint, so a full delta
+      # never needs handling here — its early return below still holds (a full delta carries no key_tuples).
       def mark_written_partitions_stale(delta)
         return if @view_class.materialized? || delta.full_partition?
 
