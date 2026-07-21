@@ -61,6 +61,8 @@ require_relative "materialized/reconcile_result"
 require_relative "materialized/reconciler"
 require_relative "materialized/partition_record"
 require_relative "materialized/partition_state"
+require_relative "materialized/source_watermark_record"
+require_relative "materialized/source_watermark"
 require_relative "materialized/write_outbox_record"
 require_relative "materialized/write_outbox"
 

@@ -6,9 +6,10 @@ require "active_job" # so the unset dispatcher default resolves via real ActiveJ
 RSpec.describe ActiveRecord::Materialized::Configuration do
   let(:config) { described_class.new }
 
-  it "defaults the metadata and write-outbox table names" do
+  it "defaults the internal table names (metadata, write-outbox, source-watermark)" do
     expect(config.metadata_table_name).to eq("ar_materialized_view_metadata")
     expect(config.write_outbox_table_name).to eq("ar_materialized_view_write_outbox")
+    expect(config.source_watermark_table_name).to eq("ar_materialized_view_source_watermarks")
   end
 
   it "provides sensible defaults" do

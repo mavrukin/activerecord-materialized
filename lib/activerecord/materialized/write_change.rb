@@ -13,13 +13,14 @@ module ActiveRecord
       OPERATIONS = %i[create update destroy].freeze
       EMPTY_ATTRIBUTES = {}.freeze
 
-      attr_reader :table_name, :operation, :before, :after
+      attr_reader :table_name, :operation, :before, :after, :source_ts
 
-      def initialize(table_name:, operation:, before:, after:)
+      def initialize(table_name:, operation:, before:, after:, source_ts: nil)
         @table_name = table_name
         @operation = operation
         @before = before
         @after = after
+        @source_ts = source_ts # optional monotonic CDC watermark (e.g. Debezium ts_ms); nil for in-app writes
       end
 
       def self.from_record(record, operation)
@@ -52,6 +53,17 @@ module ActiveRecord
         resolved_before, resolved_after = snapshots_for(op, key_attributes, before, after)
         new(table_name: table_name, operation: op,
             before: stringify_keys(resolved_before), after: stringify_keys(resolved_after))
+      end
+
+      # A copy of this change stamped with a CDC source watermark. Kept off {from_descriptor} so its
+      # (public) keyword list stays within the argument-count limit; {Materialized.ingest_change}
+      # applies it. See {SourceWatermark}.
+      #
+      # @param source_ts [Integer] a monotonic per-partition source watermark
+      # @return [WriteChange]
+      def with_source_ts(source_ts)
+        self.class.new(table_name: table_name, operation: operation,
+                       before: before, after: after, source_ts: source_ts)
       end
 
       # Full pre-update attributes: current values with changed columns reverted.
