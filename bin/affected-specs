@@ -36,6 +36,8 @@ SPEC_OVERRIDES = {
   "table_model_registry" => :all,
   "write_change" => %w[write_change_spec.rb maintenance_delta_builder_spec.rb maintenance_delta_spec.rb
                        summary_delta_builder_spec.rb delta_maintainer_spec.rb],
+  "debezium_envelope" => %w[debezium_envelope_spec.rb debezium_optional_spec.rb],
+  "change_source" => %w[change_source_configuration_spec.rb debezium_optional_spec.rb],
   "maintenance_store" => %w[maintenance_store_spec.rb maintenance_delta_spec.rb delta_maintainer_spec.rb
                             dependency_registry_spec.rb cdc_ingestion_spec.rb],
   "query_expressions" => %w[query_expressions_spec.rb view_definition_spec.rb],
