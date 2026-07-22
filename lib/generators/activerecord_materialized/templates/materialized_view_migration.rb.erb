@@ -6,6 +6,10 @@ class <%= builder.migration_class_name %> < ActiveRecord::Migration[<%= builder.
 <% builder.column_definitions.each do |column| -%>
       t.<%= column.type %> :<%= column.name %><%= column.migration_arguments %>
 <% end -%>
+<% if (index = builder.index_definition) -%>
+      # Incremental maintenance filters and deletes by the GROUP BY key; this index keeps it partition-local.
+      t.index <%= index.columns.map(&:to_sym).inspect %><%= ", unique: true" if index.unique %>
+<% end -%>
     end
   end
 end

@@ -57,9 +57,15 @@ RSpec.describe ActiveRecord::Materialized::DataVerifier do
   end
 
   it "detects a duplicated cache row for a partition" do
-    view.create!(category: "books", item_count: 1) # a second "books" row the source has one of
+    # The default GROUP BY key gets a UNIQUE cache index (#127), which structurally forbids a duplicate
+    # partition row — so exercise duplicate-detection on a view whose index is non-unique (an explicit
+    # incremental_keys coarser than the grouping), where a stray duplicate is still reachable.
+    dup_view = define_view("mv_audit_dup_items", :item_count_by_category) { incremental_keys :category }
+    seed_items(["books", 5], ["games", 3], ["toys", 2])
+    dup_view.rebuild!(confirm: true)
+    dup_view.create!(category: "books", item_count: 1) # a second "books" row the source has one of
 
-    result = described_class.new(view, mode: :row_count).verify
+    result = described_class.new(dup_view, mode: :row_count).verify
 
     expect(result.mismatched_keys).to contain_exactly(["books"]) # count differs, not collapsed away
   end
@@ -99,6 +105,45 @@ RSpec.describe ActiveRecord::Materialized::DataVerifier do
     float_view.rebuild!(confirm: true) # cache stores e.g. 5, source AVG recomputes 5.0
 
     expect(described_class.new(float_view, mode: :full).verify.drifted?).to be(false)
+  end
+
+  # #129 — a float SUM/AVG is order-dependent (0.1 + 0.2 + 0.3 => 0.6000000000000001, but a re-sum in
+  # another order => 0.6), so the maintained value and the recomputed source can differ in the last bit
+  # without any real drift. The snapshot canonicalizes floats to a fixed significance so that noise is
+  # not reported as drift — while a genuine divergence (far larger than a ULP) still is.
+  context "with a float aggregate that carries last-bit accumulation noise" do
+    let(:float_view) do
+      define_view("mv_float_sum") do
+        readings = FloatReading.arel_table
+        materialized_from do
+          FloatReading.group(:sensor).select(readings[:sensor], readings[:value].sum.as("total"))
+        end
+      end
+    end
+
+    before do
+      ActiveRecord::Base.connection.create_table(:float_readings, force: true) do |t|
+        t.string :sensor, null: false
+        t.float :value, null: false
+      end
+      stub_const("FloatReading", Class.new(ActiveRecord::Base) { self.table_name = "float_readings" })
+      [0.1, 0.2, 0.3].each { |value| FloatReading.create!(sensor: "s", value: value) }
+      float_view.rebuild!(confirm: true)
+    end
+
+    it "does not report drift when the stored float differs only in the last bit" do
+      # 0.6000000000000001 (this add order) vs a source re-sum of 0.6 — a last-bit-only difference.
+      float_view.unscoped.find_by(sensor: "s").update!(total: 0.1 + 0.2 + 0.3)
+
+      expect(described_class.new(float_view, mode: :checksum).verify.drifted?).to be(false)
+      expect(described_class.new(float_view, mode: :full).verify.drifted?).to be(false)
+    end
+
+    it "still reports a genuine value divergence far larger than float noise" do
+      float_view.unscoped.find_by(sensor: "s").update!(total: 0.9) # the source total is 0.6
+
+      expect(described_class.new(float_view, mode: :full).verify.mismatched_keys).to contain_exactly(["s"])
+    end
   end
 
   it "maps a dotted GROUP BY key to its projected column, in full and sampled modes" do

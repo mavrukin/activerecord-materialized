@@ -14,9 +14,16 @@ column types**, so a value that reads back through two different type systems (a
 date key, an integer/decimal column, a computed source aggregate) isn't mistaken
 for drift; duplicate cache rows for a partition are caught rather than collapsed. It
 covers grouped/aggregate views — a non-grouped view, a schema-drifted cache, or one
-whose `GROUP BY` key can't be matched to a projected column is skipped. (An
-un-scaled decimal aggregate can still differ in trailing float precision; give such
-a column an explicit scale to compare it soundly.)
+whose `GROUP BY` key can't be matched to a projected column is skipped.
+
+> **Floating-point aggregates.** A `SUM`/`AVG` over a **float** column is
+> order-dependent — the database may re-aggregate base rows in a different order than
+> the maintained value accumulated, so the two can differ in the last bit
+> (`0.1 + 0.2 + 0.3 => 0.6000000000000001`) with no real drift. The verifier
+> canonicalizes floats to a fixed significance so that noise is not reported as drift,
+> while a genuine divergence (far larger than a ULP) still is. For a value you need to
+> compare exactly, prefer a `DECIMAL` column with an explicit scale, or model an average
+> as stored `SUM` + `COUNT` and divide on read — both are exact and reconcile cleanly.
 
 ```ruby
 # One view, programmatically — returns a DataVerificationResult.

@@ -36,6 +36,11 @@ RSpec.describe ActiveRecord::Materialized::MigrationBuilder do
       .and include("t.string :category")
       .and include("t.decimal :total_amount, precision: 38, scale: 0")
       .and include("t.integer :row_count")
+      .and include("t.index [:category], unique: true") # #127 partition-key index
     expect { RubyVM::InstructionSequence.compile(rendered_migration) }.not_to raise_error
+  end
+
+  it "exposes the partition-key index (GROUP BY key, unique) for the generator" do
+    expect([builder.index_definition.columns, builder.index_definition.unique]).to eq([["category"], true])
   end
 end

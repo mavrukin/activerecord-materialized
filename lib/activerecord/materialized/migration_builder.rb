@@ -25,6 +25,14 @@ module ActiveRecord
       def column_definitions
         CacheTableSchema.column_definitions(@view_class.connection, @view_class.resolved_source)
       end
+
+      # The partition-key index the migration should add (nil for a non-grouped view). Incremental
+      # maintenance is keyed on these columns, so the generated migration indexes them by default.
+      #
+      # @return [CacheTableSchema::IndexDefinition, nil]
+      def index_definition
+        CacheTableSchema.index_definition(@view_class)
+      end
     end
   end
 end

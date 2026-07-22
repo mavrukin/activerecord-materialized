@@ -21,7 +21,7 @@
 - **Reads stay fast** — queries hit a small precomputed table, not a multi-second join.
 - **Freshness is automatic** — a write to a `depends_on` model schedules background maintenance; you never refresh by hand.
 - **Nothing blocks on a rebuild** — refresh is incremental and on-write, never on-read; a full rebuild happens only when you explicitly ask for it.
-- **It's just ActiveRecord** — `where`, `find`, `count`, and scopes work unchanged; an unbuilt view still returns correct results by reading through to the source.
+- **It's just ActiveRecord** — `where`, `find`, `count`, aggregations, and scopes work unchanged; an unbuilt view still returns correct results by reading through to the source (batch iteration like `find_each` needs the view built — see [Gotchas](#gotchas-and-trade-offs)).
 - **It's portable** — works on MySQL, MariaDB, and SQLite, which have no native materialized views.
 
 > 🚀 **New here? Start with the [Getting started tutorial](docs/getting-started.md)** — a hands-on, fully tested walkthrough from install to refresh-on-write.
@@ -240,8 +240,9 @@ This gem applies decades of materialized-view and incremental-maintenance resear
 | **Eventual consistency** | Between a write and background refresh completing, reads return the previous snapshot — the same trade-off as `REFRESH MATERIALIZED VIEW CONCURRENTLY` in PostgreSQL. |
 | **`depends_on` is required** | The gem can't infer dependencies from a relation. Declare every model (or table) whose writes should trigger refresh; prefer model classes so commit callbacks are wired automatically. |
 | **Non-aggregate views** | Views without `GROUP BY` fall back to full refresh (`refresh_mode :full` or atomic swap). |
+| **Cold reads on aggregate views** | Before a view is built, `where`/`find`/`count`/aggregations/`pluck`/ordinal finders (`first`/`last`) read through to the source. `find_each`/`find_in_batches`/`in_batches` and `ids` need the materialized cache (a stable primary key), so they raise `NotMaterializedError` until you `rebuild!(confirm: true)`. |
 | **Bulk & out-of-band writes** | `insert_all`/`upsert_all` and raw SQL bypass `after_commit`. Feed them through the ingestion API or database triggers, or call `mark_dirty_for_tables!` after a bulk load — see [Change sources](docs/change-sources.md). Pending scope past `max_tracked_partitions` collapses to one full recompute of a warm view, run through the same atomic build-and-swap as `rebuild!` (raise `max_tracked_partitions` to keep bulk writes partition-scoped). |
-| **No automatic indexes / storage** | Cache tables are created from query results and duplicate data — add indexes on the columns you filter/sort, and plan disk accordingly. |
+| **Indexes / storage** | The cache table is created with an index on the GROUP BY key (unique — it's the partition identity), so incremental maintenance stays partition-local; add your own indexes on any other columns you filter/sort by, and plan disk for the duplicated data. |
 | **Dispatcher at scale** | `refresh_dispatcher` auto-resolves to `:active_job` when ActiveJob is loaded, else an in-process thread (single-process-only, warned at boot). Multi-server deployments should confirm `:active_job` and run the periodic backstop from **one** owner — see [distributed deployment](docs/distributed-deployment.md). |
 
 ---

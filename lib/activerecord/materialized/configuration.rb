@@ -113,6 +113,18 @@ module ActiveRecord
         @max_tracked_partitions ||= 1_000
       end
 
+      # App-relative directories the Railtie eager-loads on boot (and on each dev reload) so every
+      # view class is loaded — and its +depends_on+ commit callbacks installed — even under Zeitwerk's
+      # lazy loading (`config.eager_load = false`, i.e. development and test). Without this, a view
+      # whose constant nothing has referenced yet has no callbacks, so writes to its dependencies
+      # silently don't schedule maintenance until something first touches the class. Defaults to
+      # +["app/models"]+ (where view classes conventionally live); set to +[]+ to disable, or list your
+      # own directories. Only existing directories that are Zeitwerk autoload roots are loaded — a path
+      # outside the autoloader (or a production app that already eager-loads) is a safe no-op.
+      #
+      # @return [Array<String>]
+      attr_accessor :view_load_paths
+
       def initialize
         @metadata_table_name = "ar_materialized_view_metadata"
         @partition_table_name = "ar_materialized_view_partitions"
@@ -127,6 +139,7 @@ module ActiveRecord
         @refresh_queue_name = :materialized_views
         @default_cold_read_strategy = :read_through
         @replica_lag = 0
+        @view_load_paths = ["app/models"]
       end
 
       # Whether ActiveJob is loaded — the single source of truth for the dispatcher default and
