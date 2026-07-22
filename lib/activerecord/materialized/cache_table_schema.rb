@@ -25,17 +25,39 @@ module ActiveRecord
         end
       end
 
+      # The partition-key index a cache table is built with: the GROUP BY / maintenance-key columns
+      # (unqualified to their cache-column names), unique when the key is the whole partition identity
+      # (a plain GROUP BY, one row per group). Incremental maintenance filters/deletes/re-selects by
+      # exactly these columns, so without this index every partition operation is a full cache scan.
+      #
+      # @api private
+      IndexDefinition = Data.define(:columns, :unique)
+
       module_function
 
       def ensure_table!(view_class, relation)
         return if view_class.table_exists?
 
-        build_table!(view_class.connection, view_class.table_name, relation)
+        build_table!(view_class.connection, view_class.table_name, relation, index: index_definition(view_class))
         view_class.reset_column_information
       end
 
       def create_table!(view_class, table_name, relation)
-        build_table!(view_class.connection, table_name, relation)
+        build_table!(view_class.connection, table_name, relation, index: index_definition(view_class))
+      end
+
+      # The partition-key index for a view, or nil for a non-grouped view (no maintenance key to index).
+      # A key derived purely from the GROUP BY is the partition identity, so the index is UNIQUE — which
+      # also structurally prevents duplicate partition rows under concurrent maintenance (see #95). An
+      # explicit +incremental_keys+ override may be coarser than the grouping, so that index is non-unique.
+      #
+      # @return [IndexDefinition, nil]
+      def index_definition(view_class)
+        keys = view_class.maintenance_key_columns
+        return nil if keys.empty?
+
+        columns = keys.map { |key| key.rpartition(".").last }
+        IndexDefinition.new(columns: columns, unique: view_class.incremental_key_columns.empty?)
       end
 
       # The inferred MV columns. Names come from the query's projection (authoritative, via
@@ -49,12 +71,13 @@ module ActiveRecord
         end
       end
 
-      def build_table!(connection, table_name, relation)
+      def build_table!(connection, table_name, relation, index: nil)
         definitions = column_definitions(connection, relation)
         connection.create_table(table_name) do |table|
           definitions.each do |definition|
             table.public_send(definition.type, definition.name, **definition.options)
           end
+          table.index(index.columns, unique: index.unique) if index
         end
       end
       private_class_method :build_table!
