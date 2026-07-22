@@ -505,6 +505,14 @@ is the descriptor-oriented entry point for wiring such a stream to the engine,
 without the gem depending on any specific CDC tool. Views fed this way declare
 `change_source :none`.
 
+CDC is **one option, not a requirement** — and the heaviest. It's the last rung of the layered
+[change-source ladder](docs/out-of-band-writes.md#the-layers-of-defense): in-app callbacks (the
+default) → the ingestion API → the [trigger/outbox adapter](#capturing-out-of-band-writes-with-database-triggers)
+→ CDC → reconciliation underneath as the backstop. Reach for CDC only when you already run a
+binlog/WAL pipeline or need org-wide completeness; most apps never do. And nothing in the gem depends
+on Debezium or any specific CDC tool — `ingest_change` takes plain descriptors, so Maxwell, Kafka
+Connect, a custom consumer, or the built-in trigger/outbox all normalize to the same call.
+
 ```ruby
 # A change-stream consumer relays each committed change. Normalize your stream's
 # event shape to this call; nothing here is tied to a particular CDC system.
@@ -558,10 +566,10 @@ slot (Postgres) and a real ROW binlog (MySQL) and asserting the view converges �
 ingestion API is verified against what an actual CDC consumer emits, not a synthesized
 descriptor (see [integration testing](docs/integration-testing.md)).
 
-Rather than hand-write that mapping, pass the decoded envelope straight to
-`ingest_debezium_change`, which does it for you (op → operation, `before`/`after`,
-`source.table`, and `source.ts_ms` → `source_ts` (the watermark above) while unwrapping a
-nested `payload`) and no-ops a `nil` tombstone:
+The Debezium envelope shape is common enough to warrant a helper, so — **optionally** — rather than
+hand-write that mapping you can pass the decoded envelope straight to `ingest_debezium_change`, which
+does it for you (op → operation, `before`/`after`, `source.table`, and `source.ts_ms` → `source_ts`
+(the watermark above) while unwrapping a nested `payload`) and no-ops a `nil` tombstone:
 
 ```ruby
 consumer.each do |event|
@@ -573,6 +581,12 @@ rescue => e
   report(e)
 end
 ```
+
+A Maxwell, Kafka Connect, or custom stream needs no such helper — normalize its event shape to
+`ingest_change` in the couple of lines shown above. `ingest_debezium_change` is pure opt-in sugar over
+that tool-agnostic call, not a dependency: the gem ships no Debezium or Kafka library, and Debezium is
+not a change source you configure (the sources are `:callbacks` and `:none`) — just one way to produce
+descriptors for the `:none` path.
 
 CDC composes with callbacks (use callbacks for in-app writes and CDC for the write
 paths they miss) as long as each view has a single source: give CDC-fed views
