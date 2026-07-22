@@ -67,4 +67,54 @@ RSpec.describe ActiveRecord::Materialized::ColdRead do
       expect(view_class.count).to eq(0)
     end
   end
+
+  # The class-level terminal/finder surface on a cold aggregate view (#132). Most of it
+  # (count/sum/min/max/average/pluck/pick/exists?/find_by) already reads through via the `all`
+  # override; the order-dependent finders and primary-key-based methods used to raise
+  # "no such column: id" because a read-through derived table has no id.
+  # The top-level before seeds books => 2 rows (item_count 2), games => 1 row (item_count 1).
+  describe "terminal and finder methods on a cold aggregate view" do
+    it "reads calculations, existence, and lookups through to the source", :aggregate_failures do
+      expect(view_class.materialized?).to be(false)
+      expect(view_class.count).to eq(2)            # two partitions
+      expect(view_class.sum(:item_count)).to eq(3) # 2 + 1
+      expect(view_class.minimum(:item_count)).to eq(1)
+      expect(view_class.maximum(:item_count)).to eq(2)
+      expect(view_class.pluck(:category)).to contain_exactly("books", "games")
+      expect(view_class.exists?).to be(true)
+      expect(view_class.find_by(category: "books").item_count).to eq(2)
+    end
+
+    it "serves order-dependent finders by ordering on the GROUP BY key, not the missing id",
+       :aggregate_failures do
+      expect(view_class.first.category).to eq("books") # ordered by category asc
+      expect(view_class.last.category).to eq("games")
+      expect(view_class.second.category).to eq("games")
+      expect(view_class.take).to be_present
+      expect(view_class.implicit_order_column).to eq(["category", nil]) # skip pk via trailing nil
+    end
+
+    it "refuses primary-key-bound methods with actionable guidance while cold", :aggregate_failures do
+      noop = ->(_) {}
+
+      expect { view_class.ids }.to raise_error(ActiveRecord::Materialized::NotMaterializedError, /rebuild!/)
+      expect { view_class.find_each(&noop) }
+        .to raise_error(ActiveRecord::Materialized::NotMaterializedError, /rebuild!/)
+      expect { view_class.find_in_batches(&noop) }
+        .to raise_error(ActiveRecord::Materialized::NotMaterializedError, /rebuild!/)
+      expect { view_class.in_batches(&noop) }
+        .to raise_error(ActiveRecord::Materialized::NotMaterializedError, /rebuild!/)
+    end
+
+    it "runs every method against the cache once warmed", :aggregate_failures do
+      view_class.rebuild!(confirm: true)
+
+      expect(view_class.first.category).to eq("books")
+      expect(view_class.ids).to match_array(view_class.unscoped.pluck(:id))
+
+      iterated = []
+      view_class.find_each { |row| iterated << row.category }
+      expect(iterated).to contain_exactly("books", "games")
+    end
+  end
 end

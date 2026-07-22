@@ -138,7 +138,57 @@ module ActiveRecord
           read_router.scope.count(*args)
         end
 
+        # Order-dependent finders (+first+, +last+, +second+, …) fall back to an implicit
+        # +ORDER BY <primary key>+ when the relation carries no order. A cold view reads through to
+        # the source as a derived table with no +id+ column, so that implicit order references a
+        # column that does not exist and the query blows up. Order by the GROUP BY key(s) instead —
+        # they exist on both the cold derived table and the warm cache — and the trailing +nil+ tells
+        # ActiveRecord's +_order_columns+ to use only these columns and NOT append the primary key.
+        # A non-grouped view has no such key, so it keeps the default primary-key behavior.
+        #
+        # @return [Array, Object] the group-by key columns (plus a trailing nil), or the default
+        def implicit_order_column
+          keys = maintenance_key_columns
+          keys.any? ? [*keys, nil] : super
+        end
+
+        # +ids+ and batch iteration (+find_each+/+find_in_batches+/+in_batches+) are defined in terms
+        # of the primary key: +ids+ plucks it, and batching cursors on it and requires the cursor to be
+        # a unique column. A cold view's read-through derived table has no +id+ (and no index to make a
+        # group-key cursor unique), so none of these can be served correctly — a warm, materialized
+        # cache table is required. Refuse with a clear, actionable error rather than emitting the
+        # cryptic "no such column: id" the underlying query would raise.
+        def ids(*args)
+          require_materialized!(:ids)
+          super
+        end
+
+        def find_each(*args, **opts, &block)
+          require_materialized!(:find_each)
+          super
+        end
+
+        def find_in_batches(*args, **opts, &block)
+          require_materialized!(:find_in_batches)
+          super
+        end
+
+        def in_batches(*args, **opts, &block)
+          require_materialized!(:in_batches)
+          super
+        end
+
         private
+
+        # These methods need the materialized cache table (a stable primary key / unique cursor);
+        # a cold read-through has none, so refuse with guidance instead of a misleading SQL error.
+        def require_materialized!(method_name)
+          return if materialized?
+
+          Kernel.raise NotMaterializedError,
+                       "#{view_class.name}.#{method_name} requires a materialized view; " \
+                       "run #{view_class.name}.rebuild!(confirm: true) first"
+        end
 
         def read_router
           ReadRouter.new(view_class)
