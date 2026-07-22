@@ -146,9 +146,13 @@ module ActiveRecord
         # ActiveRecord's +_order_columns+ to use only these columns and NOT append the primary key.
         # A non-grouped view has no such key, so it keeps the default primary-key behavior.
         #
+        # The keys are unqualified (a dotted GROUP BY like +"items.category"+ maps to the projected
+        # +category+ on the cache/derived table), matching how {ViewDefinition} and {CacheTableSchema}
+        # resolve them — a qualified name would reference a column neither table has, on warm and cold.
+        #
         # @return [Array, Object] the group-by key columns (plus a trailing nil), or the default
         def implicit_order_column
-          keys = maintenance_key_columns
+          keys = maintenance_key_columns.map { |key| key.rpartition(".").last }
           keys.any? ? [*keys, nil] : super
         end
 
