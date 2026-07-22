@@ -27,7 +27,7 @@ By the end you will have:
 - [3. Read before you build (read-through)](#3-read-before-you-build-read-through)
 - [4. Build the view once](#4-build-the-view-once)
 - [5. Query it like any model](#5-query-it-like-any-model)
-- [6. Refresh on write](#6-refresh-on-write)
+- [6. Refresh on write](#6-refresh-on-write--the-payoff)
 - [7. Staleness and on-demand refresh](#7-staleness-and-on-demand-refresh)
 - [8. Warm up hot partitions](#8-warm-up-hot-partitions)
 - [9. Production checklist](#9-production-checklist)
@@ -289,7 +289,7 @@ read-through until it's touched.
   `depends_on`. Callbacks observe only writes that go through ActiveRecord; for raw
   SQL or other write paths, feed changes through the ingestion API
   (`ActiveRecord::Materialized.publish_write_change!` / `mark_dirty_for_tables!`) —
-  see the [Change sources](../README.md#change-sources) docs.
+  see the [Change sources](change-sources.md) docs.
 - **Bulk loads.** Stick with `:async` (non-zero debounce) or `:manual`. Note that
   `insert_all`/`upsert_all` skip `after_commit`, so the view isn't notified — call
   `ActiveRecord::Materialized.mark_dirty_for_tables!([...])` afterwards to recompute
