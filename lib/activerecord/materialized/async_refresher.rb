@@ -58,6 +58,17 @@ module ActiveRecord
 
           @timer_thread = Thread.new do
             sleep(interval) unless interval.zero?
+            drain_on_pooled_connection
+          end
+        end
+
+        # The background drain runs `refresh!` (real DML) on a thread of our own, so it must lease a
+        # pooled connection and return it. `with_connection` checks one out for the block and releases
+        # it in an ensure — even if a refresh raises — so a burst of writes can't leak the pool dry.
+        # (The synchronous `flush!` path drains on the caller's already-managed thread, so it is left
+        # to that thread's connection lifecycle.)
+        def drain_on_pooled_connection
+          ::ActiveRecord::Base.connection_pool.with_connection do
             mutex.synchronize { drain_pending_unlocked }
           end
         end
