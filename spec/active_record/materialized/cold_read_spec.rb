@@ -117,4 +117,30 @@ RSpec.describe ActiveRecord::Materialized::ColdRead do
       expect(iterated).to contain_exactly("books", "games")
     end
   end
+
+  # #144 — a dotted-string GROUP BY key ("items.category") is qualified in maintenance_key_columns,
+  # but the cache/derived table has only the bare projected column ("category"). implicit_order_column
+  # must unqualify it, or ordinal finders order by a non-existent column and blow up — on BOTH the cold
+  # derived table and the warm cache (a regression the first #132 fix introduced for this shape).
+  describe "ordinal finders on a dotted-string GROUP BY key" do
+    let(:dotted_view) { define_view("mv_dotted_ordinals", :item_count_by_dotted_category) }
+
+    it "unqualifies the key in the implicit order column" do
+      expect(dotted_view.implicit_order_column).to eq(["category", nil])
+    end
+
+    it "serves ordinal finders while cold without referencing the qualified column", :aggregate_failures do
+      expect(dotted_view.first.category).to eq("books")
+      expect(dotted_view.last.category).to eq("games")
+      expect(dotted_view.second.category).to eq("games")
+    end
+
+    it "serves ordinal finders once warm", :aggregate_failures do
+      dotted_view.rebuild!(confirm: true)
+
+      expect(dotted_view.first.category).to eq("books")
+      expect(dotted_view.last.category).to eq("games")
+      expect(dotted_view.ids).to match_array(dotted_view.unscoped.pluck(:id))
+    end
+  end
 end

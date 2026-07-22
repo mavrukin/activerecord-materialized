@@ -8,9 +8,9 @@ require "spec_helper"
 # #134 — under Zeitwerk's lazy loading (config.eager_load = false: development/test) a view class
 # whose constant nothing has referenced yet is never loaded, so its depends_on commit callbacks are
 # never installed and writes to its dependencies don't schedule maintenance. The Railtie's
-# config.to_prepare hook (ActiveRecord::Materialized.load_views!) eager-loads the view directories so
-# the callbacks are wired regardless. This is exercised in a subprocess against a real, lazy-loaded
-# Rails application, since the callback-install timing only matters inside the Rails boot sequence.
+# config.to_prepare hook (ViewLoader.load!) eager-loads the view directories so the callbacks are
+# wired regardless. This is exercised in a subprocess against a real, lazy-loaded Rails application,
+# since the callback-install timing only matters inside the Rails boot sequence.
 EAGER_LOAD_GEM_ROOT = File.expand_path("../../..", __dir__).freeze
 
 RSpec.describe ActiveRecord::Materialized::ViewLoader do
