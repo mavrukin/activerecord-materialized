@@ -23,13 +23,12 @@ module ActiveRecord
         cache_row_count
       end
 
-      def replace_partitions!(relation, key_tuples:, full_partition:)
+      # Scoped in-place maintenance: delete + re-insert only the affected partitions. A full recompute
+      # goes through +atomic_swap!+ instead (see IncrementalMaintainer#recompute_all!), so this only
+      # ever handles a bounded set of partition keys.
+      def replace_partitions!(relation, key_tuples:)
         view_class.transaction do
-          if full_partition
-            view_class.delete_all
-          else
-            delete_partitions!(key_tuples)
-          end
+          delete_partitions!(key_tuples)
           insert_rows!(relation)
         end
         cache_row_count
