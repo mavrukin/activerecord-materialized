@@ -132,3 +132,30 @@ the primary's metadata, not on the replica where the lagging read happens — so
 conservative budget, not a measurement. Keep it **below your smallest `max_staleness`**: at or above
 it the effective window is zero, so the view is *always* stale and gets reconciled every tick. Leave
 it at `0` (the default) if you read views from the primary or your lag is negligible.
+
+## 6. Maintenance throughput is serialized per view
+
+Cross-process correctness comes from a **row lock on each view's metadata row**: a maintenance cycle
+consumes (and, for the additive summary-delta path, applies) the pending payload inside
+`SELECT … FOR UPDATE` on that view's `ar_materialized_view_metadata` row. This is what makes
+concurrent cycles across servers apply an additive delta exactly once and recompute a partition once
+rather than duplicating rows (see [#92](https://github.com/mavrukin/activerecord-materialized/issues/92)
+and [#95](https://github.com/mavrukin/activerecord-materialized/issues/95)).
+
+The consequence is a **per-view throughput ceiling**: because that single row is the serialization
+point, maintenance cycles for one view run one-at-a-time no matter how many workers you add. It is
+*per view* (each view has its own metadata row), so distinct views maintain in parallel; only a
+single **write-hot** view is bottlenecked.
+
+For the library's intended workload — read-heavy, write-light aggregates — this is a non-issue. It
+matters only if you point a view at a high-write-rate table, which is [called out as a poor
+fit](../README.md#when-to-use-and-when-not-to). If you must:
+
+- Keep `:async` with a non-trivial `refresh_debounce` so a burst of writes coalesces into **one**
+  maintenance cycle rather than many contending ones (the debounce window is the main lever).
+- Spread load across multiple narrower views (each with its own lock) instead of one wide hot view.
+- Prefer distributive `SUM`/`COUNT` aggregates: their summary-delta apply is `O(affected partitions)`
+  and, with the partition-key index on the cache table, cheap — so the lock is held only briefly.
+
+The lock is a coordination primitive, not a tuning knob — there is no configuration to widen or
+shard it today. Treat per-view maintenance as single-threaded when sizing a write-heavy view.
