@@ -241,7 +241,7 @@ This gem applies decades of materialized-view and incremental-maintenance resear
 | **`depends_on` is required** | The gem can't infer dependencies from a relation. Declare every model (or table) whose writes should trigger refresh; prefer model classes so commit callbacks are wired automatically. |
 | **Non-aggregate views** | Views without `GROUP BY` fall back to full refresh (`refresh_mode :full` or atomic swap). |
 | **Bulk & out-of-band writes** | `insert_all`/`upsert_all` and raw SQL bypass `after_commit`. Feed them through the ingestion API or database triggers, or call `mark_dirty_for_tables!` after a bulk load — see [Change sources](docs/change-sources.md). Pending scope past `max_tracked_partitions` collapses to one full recompute. |
-| **No automatic indexes / storage** | Cache tables are created from query results and duplicate data — add indexes on the columns you filter/sort, and plan disk accordingly. |
+| **Indexes / storage** | The cache table is created with an index on the GROUP BY key (unique — it's the partition identity), so incremental maintenance stays partition-local; add your own indexes on any other columns you filter/sort by, and plan disk for the duplicated data. |
 | **Dispatcher at scale** | `refresh_dispatcher` auto-resolves to `:active_job` when ActiveJob is loaded, else an in-process thread (single-process-only, warned at boot). Multi-server deployments should confirm `:active_job` and run the periodic backstop from **one** owner — see [distributed deployment](docs/distributed-deployment.md). |
 
 ---

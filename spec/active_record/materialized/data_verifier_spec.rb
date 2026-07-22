@@ -57,9 +57,15 @@ RSpec.describe ActiveRecord::Materialized::DataVerifier do
   end
 
   it "detects a duplicated cache row for a partition" do
-    view.create!(category: "books", item_count: 1) # a second "books" row the source has one of
+    # The default GROUP BY key gets a UNIQUE cache index (#127), which structurally forbids a duplicate
+    # partition row — so exercise duplicate-detection on a view whose index is non-unique (an explicit
+    # incremental_keys coarser than the grouping), where a stray duplicate is still reachable.
+    dup_view = define_view("mv_audit_dup_items", :item_count_by_category) { incremental_keys :category }
+    seed_items(["books", 5], ["games", 3], ["toys", 2])
+    dup_view.rebuild!(confirm: true)
+    dup_view.create!(category: "books", item_count: 1) # a second "books" row the source has one of
 
-    result = described_class.new(view, mode: :row_count).verify
+    result = described_class.new(dup_view, mode: :row_count).verify
 
     expect(result.mismatched_keys).to contain_exactly(["books"]) # count differs, not collapsed away
   end

@@ -91,4 +91,37 @@ RSpec.describe ActiveRecord::Materialized::CacheTableSchema do
     end
     Class.new(ActiveRecord::Base) { self.table_name = "arm_alias_probe" }
   end
+
+  # #127 — incremental maintenance filters/deletes/re-selects by the GROUP BY key, so a cache table is
+  # built with an index on those columns; every table-building path (skeleton + rebuild) carries it.
+  describe "partition-key index" do
+    it "indexes the GROUP BY key uniquely when built for a grouped view" do
+      view = define_view("mv_idx_grouped", :item_count_by_category)
+      view.rebuild!(confirm: true)
+
+      indexes = ActiveRecord::Base.connection.indexes("mv_idx_grouped")
+      expect(indexes.map { |index| [index.columns, index.unique] }).to contain_exactly([["category"], true])
+    end
+
+    it "carries the same index onto the cold read-through skeleton table" do
+      view = define_view("mv_idx_skeleton", :item_count_by_category)
+      view.where(category: "books").to_a # provisions the empty skeleton via ensure_table!
+
+      indexes = ActiveRecord::Base.connection.indexes("mv_idx_skeleton")
+      expect(indexes.map { |index| [index.columns, index.unique] }).to contain_exactly([["category"], true])
+    end
+
+    it "makes the partition-key index non-unique when incremental_keys is coarser than the grouping" do
+      view = define_view("mv_idx_explicit", :item_count_by_category) { incremental_keys :category }
+      definition = described_class.index_definition(view)
+
+      expect([definition.columns, definition.unique]).to eq([["category"], false])
+    end
+
+    it "adds no index for a non-grouped view" do
+      view = define_view("mv_idx_nogroup") { materialized_from { Item.select(:category, :amount) } }
+
+      expect(described_class.index_definition(view)).to be_nil
+    end
+  end
 end
