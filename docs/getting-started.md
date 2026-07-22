@@ -290,6 +290,11 @@ read-through until it's touched.
   SQL or other write paths, feed changes through the ingestion API
   (`ActiveRecord::Materialized.publish_write_change!` / `mark_dirty_for_tables!`) —
   see the [Change sources](change-sources.md) docs.
+- **View classes load on boot.** A view's `depends_on` callbacks are installed when
+  its class loads, so the gem eager-loads your view directories on boot and on each
+  reload — even in development/test where Zeitwerk loads lazily. Views live in
+  `app/models` by default; if yours live elsewhere, set
+  `config.view_load_paths = ["app/materialized_views", ...]` (or `[]` to opt out).
 - **Bulk loads.** Stick with `:async` (non-zero debounce) or `:manual`. Note that
   `insert_all`/`upsert_all` skip `after_commit`, so the view isn't notified — call
   `ActiveRecord::Materialized.mark_dirty_for_tables!([...])` afterwards to recompute

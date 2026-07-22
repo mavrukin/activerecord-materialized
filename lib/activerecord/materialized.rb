@@ -66,6 +66,7 @@ require_relative "materialized/source_watermark_record"
 require_relative "materialized/source_watermark"
 require_relative "materialized/write_outbox_record"
 require_relative "materialized/write_outbox"
+require_relative "materialized/view_loader"
 
 if defined?(ActiveJob::Base)
   require_relative "materialized/refresh_job"
