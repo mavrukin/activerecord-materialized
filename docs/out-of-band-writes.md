@@ -32,8 +32,8 @@ The first four are **completeness** layers (catch the write when it happens); th
 in-app writes, a completeness layer for the paths callbacks miss, and reconciliation underneath so
 *any* residual miss self-heals within a bounded window.
 
-- Ingestion API — see [Driving maintenance from CDC / an external change stream](../README.md#change-sources).
-- Reconciliation — see [Bounded staleness and self-healing](../README.md#bounded-staleness-and-self-healing).
+- Ingestion API — see [Driving maintenance from CDC / an external change stream](change-sources.md#driving-maintenance-from-cdc--an-external-change-stream).
+- Reconciliation — see [Bounded staleness and self-healing](reconciliation.md#bounded-staleness-and-self-healing).
 
 ## When to reach for the trigger/outbox adapter
 
@@ -68,7 +68,7 @@ raw/bulk/other-service write to line_items
 
 Capture is **scoped**: the trigger records only the configured key columns (the view's `GROUP BY`
 columns), not the whole row. That is exactly what
-[`ingest_change`](../README.md#driving-maintenance-from-cdc--an-external-change-stream) needs to
+[`ingest_change`](change-sources.md#driving-maintenance-from-cdc--an-external-change-stream) needs to
 scope maintenance to the affected partition(s):
 
 - an **insert** records the new-image keys (`key_after`) → the new partition;
@@ -133,7 +133,7 @@ partition twice — but they do duplicate maintenance work; the gem ships no lea
 
 ### The outbox is a single change source
 
-The outbox is a change source in its own right, exactly like [CDC](../README.md#driving-maintenance-from-cdc--an-external-change-stream):
+The outbox is a change source in its own right, exactly like [CDC](change-sources.md#driving-maintenance-from-cdc--an-external-change-stream):
 `drain_write_outbox!` relays through `ingest_change`, which delivers **only** to views declared
 `change_source :none` (the engine ties each view to a single source so an additive delta is never
 applied twice). So a view fed by the outbox must be `change_source :none` — you cannot keep callbacks
