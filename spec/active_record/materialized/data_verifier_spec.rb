@@ -101,6 +101,45 @@ RSpec.describe ActiveRecord::Materialized::DataVerifier do
     expect(described_class.new(float_view, mode: :full).verify.drifted?).to be(false)
   end
 
+  # #129 — a float SUM/AVG is order-dependent (0.1 + 0.2 + 0.3 => 0.6000000000000001, but a re-sum in
+  # another order => 0.6), so the maintained value and the recomputed source can differ in the last bit
+  # without any real drift. The snapshot canonicalizes floats to a fixed significance so that noise is
+  # not reported as drift — while a genuine divergence (far larger than a ULP) still is.
+  context "with a float aggregate that carries last-bit accumulation noise" do
+    let(:float_view) do
+      define_view("mv_float_sum") do
+        readings = FloatReading.arel_table
+        materialized_from do
+          FloatReading.group(:sensor).select(readings[:sensor], readings[:value].sum.as("total"))
+        end
+      end
+    end
+
+    before do
+      ActiveRecord::Base.connection.create_table(:float_readings, force: true) do |t|
+        t.string :sensor, null: false
+        t.float :value, null: false
+      end
+      stub_const("FloatReading", Class.new(ActiveRecord::Base) { self.table_name = "float_readings" })
+      [0.1, 0.2, 0.3].each { |value| FloatReading.create!(sensor: "s", value: value) }
+      float_view.rebuild!(confirm: true)
+    end
+
+    it "does not report drift when the stored float differs only in the last bit" do
+      # 0.6000000000000001 (this add order) vs a source re-sum of 0.6 — a last-bit-only difference.
+      float_view.unscoped.find_by(sensor: "s").update!(total: 0.1 + 0.2 + 0.3)
+
+      expect(described_class.new(float_view, mode: :checksum).verify.drifted?).to be(false)
+      expect(described_class.new(float_view, mode: :full).verify.drifted?).to be(false)
+    end
+
+    it "still reports a genuine value divergence far larger than float noise" do
+      float_view.unscoped.find_by(sensor: "s").update!(total: 0.9) # the source total is 0.6
+
+      expect(described_class.new(float_view, mode: :full).verify.mismatched_keys).to contain_exactly(["s"])
+    end
+  end
+
   it "maps a dotted GROUP BY key to its projected column, in full and sampled modes" do
     dotted_view = define_view("mv_dotted_items", :item_count_by_dotted_category)
     dotted_view.rebuild!(confirm: true)
