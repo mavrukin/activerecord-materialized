@@ -62,10 +62,10 @@ module ActiveRecord
 
       attr_reader :source
 
-      # A bare or single-dot-qualified SQL identifier — "state" or
-      # "payrolls.company_id". Used to tell a plain key column in a DISTINCT
-      # projection from an expression (parens, star, spaces, operators), so a raw
-      # SQL string in the SELECT list is never mistaken for a partition key.
+      # A bare or single-dot-qualified SQL identifier — "category" or
+      # "orders.region". Used to tell a plain key column in a DISTINCT projection
+      # from an expression (parens, star, spaces, operators), so a raw SQL string
+      # in the SELECT list is never mistaken for a partition key.
       PLAIN_COLUMN_PATTERN = /\A\w+(?:\.\w+)?\z/
       private_constant :PLAIN_COLUMN_PATTERN
 
@@ -133,7 +133,7 @@ module ActiveRecord
       # Partition-key attributes keyed by name; an Arel attribute carries its real
       # table (e.g. a joined `name.gender`) that the bare base table column lacks.
       # Reads the same nodes as the key columns, so a DISTINCT projection's joined
-      # key attribute (e.g. `payrolls.company_id`) qualifies to its own table too.
+      # key attribute (e.g. `orders.region`) qualifies to its own table too.
       def group_attributes
         @group_attributes ||= key_value_nodes.each_with_object({}) do |value, map|
           map[value.name.to_s] = value if value.is_a?(::Arel::Attributes::Attribute)
