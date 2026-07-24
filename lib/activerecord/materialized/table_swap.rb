@@ -22,11 +22,17 @@ module ActiveRecord
       def swap!(temp_table, old_table)
         preserved = current_indexes
         if connection.supports_ddl_transactions?
+          # SQLite/Postgres: rename + index restore commit together, so readers only ever see the old
+          # table or the fully-indexed new one.
           connection.transaction do
             rename_in_place!(temp_table, old_table)
             restore_missing_indexes!(preserved)
           end
         else
+          # MySQL/MariaDB: RENAME TABLE auto-commits (a transaction can't make it atomic with the
+          # index rebuild), so the restore runs after. A crash in this window leaves the new table live
+          # but missing the preserved indexes until the next rebuild! — degraded read/maintenance
+          # performance, never data loss or an empty table (the rename itself is atomic).
           atomic_rename!(temp_table, old_table)
           restore_missing_indexes!(preserved)
         end

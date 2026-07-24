@@ -8,14 +8,6 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
-- **Incremental maintenance for `DISTINCT` lookups.** A view whose source is a `SELECT DISTINCT a, b`
-  with no `GROUP BY` and no aggregate is now maintained incrementally: its projected columns are the
-  partition key, so it partitions and scoped-recomputes exactly like `GROUP BY a, b` (through the
-  always-correct partition-recompute path — there are no aggregates to summary-delta). This covers the
-  canonical "distinct lookup" the gem exists to speed up; previously such a view had no detected group
-  key and degraded to full-refresh-only. A projection that is not purely plain key columns (a raw-SQL
-  expression, `DISTINCT *`, or `DISTINCT` combined with an aggregate) still falls back to full refresh.
-  Cold ordinal finders (`first`/`last`) on a distinct view now order by its key columns too. (#146)
 - **Pluggable change sources & CDC ingestion.** Change *detection* is now decoupled from view
   *maintenance* behind a public ingestion API — `publish_write_change!` and `mark_dirty_for_tables!`
   (with the lower-level `ingest_change` for a normalized change descriptor) — so a view can be fed
