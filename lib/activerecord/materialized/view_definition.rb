@@ -2,7 +2,10 @@
 
 module ActiveRecord
   module Materialized
-    # Inspects a source relation for its GROUP BY maintenance keys and builds partition scopes.
+    # Inspects a source relation for its partition (maintenance) keys and builds partition scopes.
+    # The keys are the relation's GROUP BY columns, or — for a `SELECT DISTINCT a, b` with no GROUP BY
+    # and no aggregate — its projected columns, since a distinct lookup partitions exactly like a
+    # GROUP BY of those columns.
     #
     # @api private
     class ViewDefinition
@@ -59,6 +62,13 @@ module ActiveRecord
 
       attr_reader :source
 
+      # A bare or single-dot-qualified SQL identifier — "state" or
+      # "payrolls.company_id". Used to tell a plain key column in a DISTINCT
+      # projection from an expression (parens, star, spaces, operators), so a raw
+      # SQL string in the SELECT list is never mistaken for a partition key.
+      PLAIN_COLUMN_PATTERN = /\A\w+(?:\.\w+)?\z/
+      private_constant :PLAIN_COLUMN_PATTERN
+
       def resolve_group_key_columns
         return @explicit_group_keys if @explicit_group_keys&.any?
 
@@ -66,7 +76,42 @@ module ActiveRecord
       end
 
       def relation_group_columns
-        source.group_values.filter_map { |group_value| group_column_name(group_value) }
+        key_value_nodes.filter_map { |node| group_column_name(node) }
+      end
+
+      # The nodes that identify a partition: the GROUP BY values, or — for a
+      # DISTINCT projection of plain key columns with no GROUP BY — the projected
+      # columns themselves. `SELECT DISTINCT a, b` partitions identically to
+      # `GROUP BY a, b` (no aggregates), so a distinct lookup is maintained
+      # incrementally through the same scoped-recompute path. Anything else (an
+      # aggregate in the projection, `DISTINCT *`, no distinct) yields no keys and
+      # falls back to full refresh.
+      def key_value_nodes
+        return source.group_values if source.group_values.any?
+
+        distinct_key_projection? ? source.select_values : []
+      end
+
+      def distinct_key_projection?
+        return false unless source.distinct_value && source.group_values.empty?
+
+        nodes = source.select_values
+        nodes.any? && nodes.all? { |node| plain_key_column?(node) }
+      end
+
+      # Whether a projected node names a plain key column (safe as a DISTINCT
+      # partition key) rather than an aggregate or expression. A Symbol or Arel
+      # attribute is always a plain column; a String only when it is a bare or
+      # table-qualified identifier (never "COUNT(*)", "a + b", etc.).
+      def plain_key_column?(node)
+        case node
+        when Symbol, ::Arel::Attributes::Attribute
+          true
+        when String
+          node.match?(PLAIN_COLUMN_PATTERN)
+        else
+          false
+        end
       end
 
       def group_column_name(group_value)
@@ -85,10 +130,12 @@ module ActiveRecord
         raise ArgumentError, "scoped maintenance requires at least one partition key" if key_tuples.empty?
       end
 
-      # GROUP BY attributes keyed by name; an Arel attribute carries its real
+      # Partition-key attributes keyed by name; an Arel attribute carries its real
       # table (e.g. a joined `name.gender`) that the bare base table column lacks.
+      # Reads the same nodes as the key columns, so a DISTINCT projection's joined
+      # key attribute (e.g. `payrolls.company_id`) qualifies to its own table too.
       def group_attributes
-        @group_attributes ||= source.group_values.each_with_object({}) do |value, map|
+        @group_attributes ||= key_value_nodes.each_with_object({}) do |value, map|
           map[value.name.to_s] = value if value.is_a?(::Arel::Attributes::Attribute)
         end
       end

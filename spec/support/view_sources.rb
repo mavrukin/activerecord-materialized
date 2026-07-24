@@ -79,4 +79,25 @@ module ViewSources
     items = Item.arel_table
     Item.select(count_as(items[:id], as: :total))
   end
+
+  # A DISTINCT projection of a plain key column with no GROUP BY and no aggregate —
+  # the idiomatic "distinct lookup". Partitions identically to `group(:category)`,
+  # so it is incrementally maintainable through the scoped-recompute path.
+  def distinct_categories
+    Item.distinct.select(:category)
+  end
+
+  # A DISTINCT projection over an Arel attribute (not a Symbol) — exercises the
+  # same key-column detection through the attribute branch.
+  def distinct_categories_arel
+    Item.distinct.select(Item.arel_table[:category])
+  end
+
+  # DISTINCT combined with an aggregate in the projection — NOT a pure distinct
+  # lookup, so it must not be treated as incrementally maintainable off the
+  # projection (falls back to full refresh).
+  def distinct_with_aggregate
+    items = Item.arel_table
+    Item.distinct.select(items[:category], count_all_as(as: :tally))
+  end
 end
